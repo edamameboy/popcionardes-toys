@@ -1,13 +1,16 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { useCartStore } from '../store/useCartStore';
+import { useCartStore } from '@/store/cart';
 import Link from 'next/link';
 
 export default function NavbarCart() {
-  // Solusi hidrasi (hydration mismatch) pada Next.js + Zustand persist
   const [mounted, setMounted] = useState(false);
-  const totalItems = useCartStore((state) => state.totalItems());
+  
+  // Ambil state items secara langsung, agar Next.js re-render tiap ada perubahan!
+  const items = useCartStore((state) => state.items);
+  // Hitung total quantity
+  const totalCount = items.reduce((acc, item) => acc + item.quantity, 0);
 
   useEffect(() => {
     setMounted(true);
@@ -22,7 +25,7 @@ export default function NavbarCart() {
   return (
     <Link href="/checkout" className="block cursor-pointer">
       <button className="px-5 py-2 text-sm font-bold uppercase bg-green-400 border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all">
-        Keranjang ({totalItems})
+        Keranjang ({totalCount})
       </button>
     </Link>
   );

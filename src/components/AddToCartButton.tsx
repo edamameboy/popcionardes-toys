@@ -1,15 +1,14 @@
 "use client";
 
 import React from 'react';
-import { Product } from '../types';
-import { useCartStore } from '../store/useCartStore';
+import { Product } from '@/types';
+import { useCartStore } from '@/store/cart';
 
 export default function AddToCartButton({ product }: { product: Product }) {
   const addItem = useCartStore((state) => state.addItem);
 
   const handleAdd = () => {
     addItem(product);
-    // Vibe Neo Brutalism: Kasih alert yang ngegas dikit
     alert(`⚡ Mantap! ${product.name} masuk keranjang!`);
   };
 

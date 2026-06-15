@@ -24,9 +24,7 @@ export default function RootLayout({
           <div className="text-2xl font-black uppercase tracking-tighter hover:-rotate-2 transition-transform cursor-pointer">
             Popcionardes Toys
           </div>
-          <button className="px-5 py-2 text-sm font-bold uppercase bg-green-400 border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all">
-            Keranjang (0)
-          </button>
+          <NavbarCart />
         </nav>
 
         {/* Main Content Wrapper */}

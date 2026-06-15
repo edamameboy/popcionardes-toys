@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Product } from '../types';
+import { Product } from '@/types';
 
 export interface CartItem extends Product {
   quantity: number;
@@ -11,8 +11,6 @@ interface CartStore {
   addItem: (product: Product) => void;
   removeItem: (productId: string) => void;
   clearCart: () => void;
-  totalItems: () => number;
-  totalPrice: () => number;
 }
 
 export const useCartStore = create<CartStore>()(
@@ -42,12 +40,9 @@ export const useCartStore = create<CartStore>()(
       },
 
       clearCart: () => set({ items: [] }),
-
-      totalItems: () => get().items.reduce((acc, item) => acc + item.quantity, 0),
-      totalPrice: () => get().items.reduce((acc, item) => acc + item.price * item.quantity, 0),
     }),
     {
-      name: 'popcionardes-cart', // nama key di localStorage
+      name: 'popcionardes-cart', 
     }
   )
 );
