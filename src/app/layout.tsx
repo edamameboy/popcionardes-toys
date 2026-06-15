@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import NavbarCart from "../components/NavbarCart";
+import NavbarCart from "../components/Navbar";
 
 // Menggunakan font sans-serif yang tebal untuk kesan brutalist
 const inter = Inter({ subsets: ["latin"], weight: ["400", "700", "900"] });
@@ -21,9 +21,6 @@ export default function RootLayout({
       <body className={inter.className}>
         {/* Navbar */}
         <nav className="sticky top-0 z-50 flex items-center justify-between px-6 py-4 bg-white border-b-4 border-black">
-          <div className="text-2xl font-black uppercase tracking-tighter hover:-rotate-2 transition-transform cursor-pointer">
-            Popcionardes Toys
-          </div>
           <NavbarCart />
         </nav>
 

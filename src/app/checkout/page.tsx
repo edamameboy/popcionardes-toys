@@ -3,9 +3,10 @@
 import React, { useEffect, useState } from "react";
 import { useCartStore } from "@/store/cart";
 import Link from "next/link";
-import Script from "next/script"; // Import untuk memuat script Midtrans
+import Script from "next/script";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/utils/supabase/client";
 
-// Fungsi Format Rupiah
 const formatRupiah = (angka: number) => {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -15,40 +16,110 @@ const formatRupiah = (angka: number) => {
 };
 
 export default function CheckoutPage() {
+  const router = useRouter();
+  const supabase = createClient();
+
   const [mounted, setMounted] = useState(false);
-  const [isLoading, setIsLoading] = useState(false); // State loading untuk tombol bayar
+  const [isLoading, setIsLoading] = useState(false);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
   
-  // Ambil state dari Zustand
+  // Data User & Profil
+  const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
+  const [isProfileIncomplete, setIsProfileIncomplete] = useState(false);
+
+  // State untuk Integrasi Biteship
+  const [availableCouriers, setAvailableCouriers] = useState<any[]>([]);
+  const [isFetchingRates, setIsFetchingRates] = useState(false);
+  const [selectedCourier, setSelectedCourier] = useState<any>(null);
+  
   const items = useCartStore((state) => state.items);
   const clearCart = useCartStore((state) => state.clearCart);
   
-  // Kalkulasi total harga
   const calculatedTotal = items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+  const grandTotal = calculatedTotal + (selectedCourier?.price || 0);
 
-  // State untuk form pengiriman
-  const [formData, setFormData] = useState({
-    name: "",
-    phone: "",
-    address: "",
-  });
+  const [formData, setFormData] = useState({ name: "", phone: "", address: "", postalCode: "" });
 
-  // Mencegah hydration error
+  // 1. CEK AUTHENTICATION & TARIK PROFIL OTOMATIS
   useEffect(() => {
     setMounted(true);
+    
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        alert("⚠️ Anda harus login dulu untuk bisa Checkout!");
+        router.push("/login");
+        return;
+      }
+      setUser(user);
+
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+
+      if (profileData) {
+        setProfile(profileData);
+        // Otomatis isi form dari database
+        setFormData({
+          name: profileData.full_name || "",
+          phone: profileData.phone || "",
+          address: profileData.address || "",
+          postalCode: profileData.postal_code || "",
+        });
+
+        // Deteksi jika data penting ada yang kosong
+        if (!profileData.full_name || !profileData.phone || !profileData.address || !profileData.postal_code) {
+          setIsProfileIncomplete(true);
+        }
+      }
+      setIsAuthChecking(false);
+    };
+
+    checkAuth();
   }, []);
 
-  if (!mounted) return null;
+  // 2. AUTO-FETCH ONGKIR SAAT KODE POS TERISI (DARI PROFIL)
+  useEffect(() => {
+    if (formData.postalCode && formData.postalCode.length === 5) {
+      const getRates = async () => {
+        setIsFetchingRates(true);
+        setAvailableCouriers([]);
+        setSelectedCourier(null);
+        try {
+          const res = await fetch("/api/shipping", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ destinationPostalCode: formData.postalCode })
+          });
+          const data = await res.json();
+          
+          if (res.ok && data.rates && data.rates.length > 0) {
+            setAvailableCouriers(data.rates);
+            setSelectedCourier(data.rates[0]); 
+          }
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setIsFetchingRates(false);
+        }
+      };
+      getRates();
+    }
+  }, [formData.postalCode]);
 
-  // Tampilan jika keranjang kosong
+  if (!mounted || isAuthChecking) return (
+    <div className="min-h-[70vh] flex items-center justify-center font-black text-2xl uppercase">
+      Memeriksa Akses Keamanan... 🔐
+    </div>
+  );
+
   if (items.length === 0) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-6 p-6 text-center">
-        <h1 className="text-4xl md:text-6xl font-black uppercase tracking-tighter">
-          Keranjang Kosong!
-        </h1>
-        <p className="text-xl font-bold bg-white p-2 border-4 border-black inline-block shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-          Masa nggak beli apa-apa? Ayo jajan dulu.
-        </p>
+        <h1 className="text-4xl md:text-6xl font-black uppercase tracking-tighter">Keranjang Kosong!</h1>
         <Link href="/">
           <button className="px-8 py-4 mt-4 font-black uppercase bg-yellow-400 border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1.5 hover:translate-y-1.5 transition-all">
             Kembali Belanja
@@ -58,43 +129,58 @@ export default function CheckoutPage() {
     );
   }
 
-  // --- FUNGSI PROSES PEMBAYARAN MIDTRANS ---
+  // JIKA PROFIL BELUM LENGKAP -> BLOKIR CHECKOUT
+  if (isProfileIncomplete) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-6 p-6 text-center max-w-2xl mx-auto">
+        <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter text-red-600 bg-yellow-200 border-4 border-black p-4 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+          TUNGGU DULU BOS! 🛑
+        </h1>
+        <p className="font-bold text-xl">
+          Kami tidak tahu harus mengirim pesanan ini ke mana. Alamat atau Kode Pos Anda belum lengkap!
+        </p>
+        <Link href="/profile">
+          <button className="px-8 py-4 mt-4 font-black uppercase bg-green-400 border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1.5 hover:translate-y-1.5 transition-all text-xl">
+            Lengkapi Profil Sekarang ✍️
+          </button>
+        </Link>
+      </div>
+    );
+  }
+
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedCourier) return alert("Pilih kurir terlebih dahulu!");
+    
     setIsLoading(true);
 
     try {
-      // 1. Minta Token Transaksi dari API Route kita
+      // Kirim user.id agar order terekam sebagai milik user yang login
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ formData, items, total: calculatedTotal }),
+        body: JSON.stringify({ 
+          formData, 
+          items, 
+          total: calculatedTotal,
+          courier: `${selectedCourier.company} - ${selectedCourier.type}`,
+          shippingCost: selectedCourier.price,
+          userId: user.id // <-- Data krusial untuk database
+        }),
       });
 
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Gagal memproses pembayaran");
 
-      if (!response.ok) {
-        throw new Error(data.error || "Gagal memproses pembayaran ke server");
-      }
-
-      // 2. Panggil Popup Midtrans Snap menggunakan token yang didapat
       (window as any).snap.pay(data.token, {
-        onSuccess: function (result: any) {
-          alert("🔥 Pembayaran Berhasil! Pesanan segera diproses.");
-          clearCart(); // Kosongkan keranjang setelah sukses
-          console.log(result);
+        onSuccess: function () {
+          alert("🔥 Pembayaran Berhasil! Cek status pesanan di dashboard.");
+          clearCart();
+          router.push("/"); // Kembali ke halaman utama setelah sukses
         },
-        onPending: function (result: any) {
-          alert("⏳ Menunggu pembayaran Anda!");
-          console.log(result);
-        },
-        onError: function (result: any) {
-          alert("❌ Pembayaran Gagal! Coba lagi.");
-          console.log(result);
-        },
-        onClose: function () {
-          alert("⚠️ Yah, kok ditutup popup-nya? Belum selesai bayar loh.");
-        }
+        onPending: function () { alert("⏳ Menunggu pembayaran Anda!"); },
+        onError: function () { alert("❌ Pembayaran Gagal! Coba lagi."); },
+        onClose: function () { alert("⚠️ Popup ditutup sebelum bayar."); }
       });
 
     } catch (error: any) {
@@ -106,12 +192,7 @@ export default function CheckoutPage() {
 
   return (
     <>
-      {/* Suntik Script Midtrans secara dinamis dari Next.js */}
-      <Script 
-        src="https://app.sandbox.midtrans.com/snap/snap.js"
-        data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY}
-        strategy="lazyOnload"
-      />
+      <Script src="https://app.sandbox.midtrans.com/snap/snap.js" data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY} strategy="lazyOnload" />
 
       <div className="p-6 md:p-12 max-w-7xl mx-auto space-y-8">
         <h1 className="text-4xl md:text-6xl font-black uppercase tracking-tighter border-b-4 border-black pb-4">
@@ -119,53 +200,82 @@ export default function CheckoutPage() {
         </h1>
 
         <div className="flex flex-col lg:flex-row gap-12">
-          {/* === KIRI: Form Pengiriman === */}
-          <div className="flex-1 space-y-6">
-            <div className="bg-white p-8 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+          {/* === KIRI: Form Pengiriman Terkunci === */}
+          <div className="flex-1 space-y-8">
+            <div className="bg-white p-8 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] relative">
+              
+              {/* Tombol Pintasan ke Profil */}
+              <div className="absolute top-6 right-6">
+                <Link href="/profile" className="bg-yellow-400 text-xs font-black uppercase border-2 border-black px-3 py-1 hover:bg-black hover:text-white transition-all">
+                  Ubah Alamat
+                </Link>
+              </div>
+
               <h2 className="text-2xl font-black uppercase mb-6 bg-blue-300 inline-block px-2 border-2 border-black">
                 Data Pengiriman
               </h2>
               
-              <form id="checkout-form" onSubmit={handleCheckout} className="space-y-4">
+              <div className="space-y-4 opacity-80 pointer-events-none">
                 <div className="space-y-2">
                   <label className="font-bold uppercase text-sm">Nama Lengkap</label>
-                  <input 
-                    type="text" 
-                    required
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    className="w-full p-3 border-4 border-black bg-[#fefce8] focus:bg-white focus:outline-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] focus:shadow-none focus:translate-x-1 focus:translate-y-1 transition-all font-bold"
-                    placeholder="John Doe"
-                    disabled={isLoading}
-                  />
+                  <input type="text" readOnly value={formData.name} className="w-full p-3 border-4 border-black bg-gray-100 font-bold" />
                 </div>
-
-                <div className="space-y-2">
-                  <label className="font-bold uppercase text-sm">Nomor WhatsApp</label>
-                  <input 
-                    type="tel" 
-                    required
-                    value={formData.phone}
-                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                    className="w-full p-3 border-4 border-black bg-[#fefce8] focus:bg-white focus:outline-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] focus:shadow-none focus:translate-x-1 focus:translate-y-1 transition-all font-bold"
-                    placeholder="081234567890"
-                    disabled={isLoading}
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="font-bold uppercase text-sm">Nomor WA</label>
+                    <input type="text" readOnly value={formData.phone} className="w-full p-3 border-4 border-black bg-gray-100 font-bold" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="font-bold uppercase text-sm">Kode Pos</label>
+                    <input type="text" readOnly value={formData.postalCode} className="w-full p-3 border-4 border-black bg-gray-100 font-bold" />
+                  </div>
                 </div>
-
                 <div className="space-y-2">
                   <label className="font-bold uppercase text-sm">Alamat Lengkap</label>
-                  <textarea 
-                    required
-                    rows={4}
-                    value={formData.address}
-                    onChange={(e) => setFormData({...formData, address: e.target.value})}
-                    className="w-full p-3 border-4 border-black bg-[#fefce8] focus:bg-white focus:outline-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] focus:shadow-none focus:translate-x-1 focus:translate-y-1 transition-all font-bold resize-none"
-                    placeholder="Jl. Neo Brutalism No. 99, Jakarta..."
-                    disabled={isLoading}
-                  />
+                  <textarea rows={3} readOnly value={formData.address} className="w-full p-3 border-4 border-black bg-gray-100 font-bold resize-none" />
                 </div>
-              </form>
+              </div>
+            </div>
+
+            {/* SEKSI PILIH KURIR (DINAMIS DARI BITESHIP CACHE) */}
+            <div className="bg-white p-8 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+              <h2 className="text-2xl font-black uppercase mb-6 bg-yellow-400 inline-block px-2 border-2 border-black">
+                Pilih Kurir
+              </h2>
+              
+              {isFetchingRates ? (
+                <div className="p-6 border-4 border-black bg-gray-200 text-center font-black uppercase animate-pulse">
+                  Mencari Truk Kurir... 🚚💨
+                </div>
+              ) : availableCouriers.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {availableCouriers.map((courier) => (
+                    <div 
+                      key={`${courier.company}-${courier.type}`}
+                      onClick={() => !isLoading && setSelectedCourier(courier)}
+                      className={`p-4 border-4 border-black cursor-pointer transition-all flex flex-col space-y-2
+                        ${selectedCourier?.type === courier.type && selectedCourier?.company === courier.company
+                          ? "bg-black text-white shadow-none translate-x-1 translate-y-1" 
+                          : "bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-gray-100"
+                        }
+                        ${isLoading && "opacity-50 cursor-not-allowed"}
+                      `}
+                    >
+                      <span className="font-black uppercase">{courier.company} ({courier.type})</span>
+                      <span className="text-sm font-bold opacity-80">
+                        {courier.duration ? `Estimasi: ${courier.duration}` : "Reguler"}
+                      </span>
+                      <span className={`text-lg font-black mt-auto p-1 border-2 ${selectedCourier?.type === courier.type && selectedCourier?.company === courier.company ? "bg-white text-black border-white" : "bg-gray-200 border-black inline-block self-start"}`}>
+                        {formatRupiah(courier.price)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-6 border-4 border-black bg-red-200 text-center font-bold">
+                  Gagal mendapatkan kurir. Cek kembali kodepos Anda.
+                </div>
+              )}
             </div>
           </div>
 
@@ -176,38 +286,48 @@ export default function CheckoutPage() {
                 Ringkasan
               </h2>
 
-              <div className="space-y-4 mb-6 border-b-4 border-black pb-6">
+              <div className="space-y-4 mb-4 border-b-4 border-black pb-4">
                 {items.map((item) => (
                   <div key={item.id} className="flex justify-between items-center font-bold">
                     <div className="flex-1">
                       <p className="uppercase leading-tight">{item.name}</p>
                       <p className="text-sm">x{item.quantity}</p>
                     </div>
-                    <p className="bg-white px-2 border-2 border-black">
-                      {formatRupiah(item.price * item.quantity)}
-                    </p>
+                    <p className="bg-white px-2 border-2 border-black">{formatRupiah(item.price * item.quantity)}</p>
                   </div>
                 ))}
+              </div>
+
+              <div className="space-y-2 mb-6 border-b-4 border-black pb-6 font-bold text-sm">
+                <div className="flex justify-between">
+                  <span>Subtotal Barang</span>
+                  <span>{formatRupiah(calculatedTotal)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>Ongkos Kirim</span>
+                  <span className={!selectedCourier ? "text-red-500" : ""}>
+                    {selectedCourier ? formatRupiah(selectedCourier.price) : "Pilih kurir"}
+                  </span>
+                </div>
               </div>
 
               <div className="flex justify-between items-end mb-8">
                 <span className="font-black uppercase text-xl">Total</span>
                 <span className="font-black text-2xl bg-white px-2 py-1 border-4 border-black transform rotate-2">
-                  {formatRupiah(calculatedTotal)}
+                  {formatRupiah(grandTotal)}
                 </span>
               </div>
 
               <button 
-                form="checkout-form"
-                type="submit"
-                disabled={isLoading}
+                onClick={handleCheckout}
+                disabled={isLoading || !selectedCourier}
                 className={`w-full py-4 text-xl font-black uppercase border-4 border-black transition-all ${
-                  isLoading 
+                  isLoading || !selectedCourier
                   ? "bg-gray-400 opacity-70 translate-x-1.5 translate-y-1.5 shadow-none cursor-not-allowed" 
                   : "bg-green-400 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1.5 hover:translate-y-1.5"
                 }`}
               >
-                {isLoading ? "Memproses..." : "Bayar Sekarang"}
+                {!selectedCourier ? "Pilih Kurir Dulu" : isLoading ? "Memproses..." : "Bayar Sekarang"}
               </button>
             </div>
           </div>

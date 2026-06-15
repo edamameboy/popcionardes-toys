@@ -1,9 +1,10 @@
-import React from "react";
-import { createClient } from "@/utils/supabase/server";
-import { Product } from "@/types";
-import AddToCartButton from "@/components/AddToCartButton";
+"use client";
 
-// Fungsi untuk format Rupiah
+import React, { useEffect, useState } from "react";
+import { createClient } from "@/utils/supabase/client";
+import { useCartStore } from "@/store/cart";
+import Link from "next/link";
+
 const formatRupiah = (angka: number) => {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -12,85 +13,143 @@ const formatRupiah = (angka: number) => {
   }).format(angka);
 };
 
-export default async function Home() {
-  // Inisialisasi Supabase Server Client
-  const supabase = await createClient();
+export default function HomePage() {
+  const [products, setProducts] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  const addItem = useCartStore((state) => state.addItem);
+  const supabase = createClient();
 
-  // Fetch data langsung dari database secara aman di sisi server!
-  const { data: products, error } = await supabase
-    .from("products")
-    .select("*")
-    .order("created_at", { ascending: false });
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        // Tarik semua data produk dari database Supabase
+        const { data, error } = await supabase
+          .from("products")
+          .select("*")
+          .order("created_at", { ascending: false });
 
-  if (error) {
-    console.error("Gagal mengambil data produk:", error);
-  }
+        if (error) throw error;
+        setProducts(data || []);
+      } catch (error: any) {
+        console.error("Gagal mengambil produk:", error.message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  const productList: Product[] = products || [];
+    fetchProducts();
+  }, []);
+
+  const handleAddToCart = (product: any) => {
+    if (product.stock <= 0) {
+      alert("Yah, barangnya udah habis bos!");
+      return;
+    }
+
+    const cartItem = {
+      ...product, 
+      price: Number(product.price),
+      quantity: 1,
+    };
+
+    addItem(cartItem);
+    alert(`🔥 ${product.name} berhasil dilempar ke keranjang!`);
+  };
 
   return (
-    <div className="p-6 md:p-12 space-y-16">
-      {/* Hero Section (Tetap sama seperti sebelumnya) */}
-      <section className="bg-blue-300 border-4 border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] p-8 md:p-16 flex flex-col items-center justify-center text-center space-y-8 relative overflow-hidden">
-        {/* ... (kode hero section disembunyikan agar ringkas, gunakan yang dari tahap 1) ... */}
-         <div className="absolute -top-10 -left-10 w-32 h-32 bg-yellow-400 rounded-full border-4 border-black z-0"></div>
-        <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-pink-400 border-4 border-black -rotate-12 z-0"></div>
-        <div className="z-10 space-y-6">
-          <h1 className="text-5xl md:text-7xl font-black uppercase tracking-tight leading-none text-black">
-            Mainan Nyentrik <br /> Untuk Jiwa <span className="bg-yellow-400 px-3 py-1 border-4 border-black transform -rotate-3 inline-block shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">Muda</span>
+    <div className="min-h-screen bg-[#fcf8f2] p-6 md:p-12 font-sans space-y-12">
+      
+      {/* === HERO SECTION === */}
+      <header className="max-w-5xl mx-auto flex flex-col md:flex-row items-center gap-8 bg-yellow-400 border-4 border-black p-8 md:p-12 shadow-[12px_12px_0px_0px_rgba(0,0,0,1)]">
+        <div className="flex-1 space-y-6">
+          <h1 className="text-5xl md:text-7xl font-black uppercase tracking-tighter leading-none bg-white inline-block px-2 border-4 border-black transform -rotate-2">
+            MAINAN ANEH
           </h1>
-          <p className="text-xl md:text-2xl font-bold max-w-2xl mx-auto bg-white inline-block p-2 border-2 border-black">
-            Koleksi mainan langka, aneh, dan penuh nostalgia. Jangan ditahan, checkout sekarang!
+          <h2 className="text-3xl md:text-5xl font-black uppercase tracking-tighter leading-none">
+            UNTUK ORANG ANEH.
+          </h2>
+          <p className="font-bold text-lg max-w-md">
+            Lupakan mainan pasaran. Di Popcionardes Toys, kami menjual barang-barang nyentrik yang bikin tetangga kamu bingung.
           </p>
         </div>
-      </section>
+        <div className="w-full md:w-1/3 flex justify-center sm:flex">
+          <img 
+            src="https://api.dicebear.com/7.x/bottts/svg?seed=mascot" 
+            alt="Mascot" 
+            className="w-48 h-48 border-4 border-black bg-white rounded-full shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:rotate-12 transition-transform"
+          />
+        </div>
+      </header>
 
-      {/* Product Grid Section - REAL DATA */}
-      <section className="space-y-8">
-        <div className="flex items-end justify-between border-b-4 border-black pb-4">
-          <h2 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">Produk Pilihan</h2>
+      {/* === KATALOG PRODUK DINAMIS === */}
+      <main className="max-w-7xl mx-auto space-y-8">
+        <div className="flex justify-between items-end border-b-4 border-black pb-4">
+          <h2 className="text-4xl font-black uppercase tracking-tighter">
+            Katalog Terbaru
+          </h2>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-          {productList.length === 0 ? (
-            <div className="col-span-full p-8 border-4 border-black bg-white text-center font-bold">
-              Produk lagi kosong, bos! Coba cek database Supabase.
-            </div>
-          ) : (
-            productList.map((product) => (
+        {isLoading ? (
+          <div className="flex justify-center items-center h-64 text-2xl font-black uppercase animate-pulse">
+            Membongkar Kardus Mainan... 📦
+          </div>
+        ) : products.length === 0 ? (
+          <div className="bg-white p-8 border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] text-center font-bold text-xl">
+            Gudang masih kosong nih bos. Belum ada mainan yang dijual!
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+            {products.map((product) => (
+              // Perhatikan betapa kerennya kita memanggil product.bg_color di class Tailwind ini!
               <div 
                 key={product.id} 
-                className="bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col group overflow-hidden"
+                className={`border-4 border-black p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col transition-all hover:-translate-y-2 hover:shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] ${product.bg_color || 'bg-white'}`}
               >
-                {/* Product Image Placeholder memakai bgColor dari database */}
-                <div className={`h-64 ${product.bg_color || 'bg-gray-300'} border-b-4 border-black flex items-center justify-center transition-transform duration-300 group-hover:scale-105 origin-bottom`}>
-                  <span className="text-6xl font-black text-black opacity-30 tracking-tighter hover:opacity-100 transition-opacity">
-                    TOY
+                <div className="bg-white border-4 border-black mb-4 overflow-hidden h-48 flex items-center justify-center">
+                  <img 
+                    src={product.image_url} 
+                    alt={product.name} 
+                    className="object-contain w-full h-full p-4 hover:scale-110 transition-transform" 
+                  />
+                </div>
+                
+                <div className="flex justify-between items-start mb-2 gap-2">
+                  <h3 className="text-xl font-black uppercase leading-tight">
+                    {product.name}
+                  </h3>
+                  <span className="text-xs font-black bg-white border-2 border-black px-2 py-1">
+                    STOK: {product.stock}
                   </span>
                 </div>
                 
-                {/* Product Info */}
-                <div className="p-6 flex flex-col grow bg-white z-10 space-y-4">
-                  <h3 className="text-2xl font-bold leading-tight uppercase">{product.name}</h3>
-                  <p className="text-sm font-medium border-l-4 border-black pl-2">{product.description}</p>
+                <p className="text-sm font-bold opacity-80 mb-6 flex-1">
+                  {product.description}
+                </p>
+                
+                <div className="flex items-center justify-between mt-auto">
+                  <span className="text-xl font-black bg-white px-2 py-1 border-4 border-black transform rotate-2">
+                    {formatRupiah(product.price)}
+                  </span>
                   
-                  <div className="flex justify-between items-center mt-auto">
-                    <p className="text-xl font-black bg-gray-100 px-2 py-1 border-2 border-black">
-                      {formatRupiah(product.price)}
-                    </p>
-                    <p className="text-xs font-bold uppercase bg-black text-white px-2 py-1">
-                      Stok: {product.stock}
-                    </p>
-                  </div>
-
-                  {/* Integrasi tombol interaktif */}
-                  <AddToCartButton product={product} />
+                  <button 
+                    onClick={() => handleAddToCart(product)}
+                    disabled={product.stock <= 0}
+                    className={`px-4 py-2 font-black uppercase border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all ${
+                      product.stock > 0 
+                      ? "bg-green-400 hover:shadow-none hover:translate-x-1 hover:translate-y-1" 
+                      : "bg-gray-400 cursor-not-allowed text-white shadow-none translate-x-1 translate-y-1"
+                    }`}
+                  >
+                    {product.stock > 0 ? "GAS BELI" : "HABIS"}
+                  </button>
                 </div>
               </div>
-            ))
-          )}
-        </div>
-      </section>
+            ))}
+          </div>
+        )}
+      </main>
+
     </div>
   );
 }
