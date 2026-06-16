@@ -141,10 +141,12 @@ export default function Navbar() {
             
             <div className="flex items-center gap-2 border-l-4 border-black pl-3 ml-1 h-full py-1">
               {profile?.role === 'admin' && (
-                <Link href="/admin" className="block"><button className="text-[10px] sm:text-xs font-black uppercase bg-purple-400 text-white border-2 border-black px-2 py-1 hover:bg-black hover:translate-x-0.5 hover:translate-y-0.5 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all">👑 Admin</button></Link>
+                <a href="http://localhost:3001" target="_blank" rel="noopener noreferrer">
+                  <button className="text-[10px] sm:text-xs font-black uppercase bg-yellow-400 border-2 border-black px-2 py-1 hover:bg-white hover:translate-x-0.5 hover:translate-y-0.5 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all">Admin</button>
+                </a>
               )}
               <Link href="/orders" className="block"><button className="text-[10px] sm:text-xs font-black uppercase bg-blue-300 border-2 border-black px-2 py-1 hover:bg-white hover:translate-x-0.5 hover:translate-y-0.5 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all">Pesanan</button></Link>
-              <button onClick={handleLogout} className="text-[10px] sm:text-xs font-black uppercase bg-red-400 text-white border-2 border-black px-2 py-1 hover:bg-black transition-all active:translate-x-0.5 active:translate-y-0.5 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none">Out</button>
+              <button onClick={handleLogout} className="text-[10px] sm:text-xs font-black uppercase bg-red-400 border-2 border-black px-2 py-1 hover:bg-white hover:translate-x-0.5 hover:translate-y-0.5 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all">Out</button>
             </div>
           </div>
         ) : (
