@@ -62,7 +62,7 @@ function ProductGrid() {
       quantity: 1, 
       stock: product.stock,
       image_url: product.image_url
-    });
+    }as any);
     
     // Tampilkan notifikasi native sebentar
     alert(`🛒 ${product.name} berhasil masuk keranjang!`);
@@ -145,10 +145,10 @@ function ProductGrid() {
 // ==========================================
 export default function HomePage() {
   return (
-    <div className="p-4 md:p-8 max-w-[1400px] mx-auto space-y-10">
+    <div className="p-4 md:p-8 max-w-350 mx-auto space-y-10">
       
       {/* HERO BANNER NEO BRUTALISM */}
-      <div className="bg-pink-300 border-4 border-black p-6 md:p-12 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden min-h-[350px] flex items-center">
+      <div className="bg-pink-300 border-4 border-black p-6 md:p-12 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden min-h-87.5 flex items-center">
         
         {/* KIRI: Teks Banner (Sama persis tidak ada yang diubah) */}
         <div className="relative z-20 md:w-2/3 space-y-4">
@@ -165,10 +165,10 @@ export default function HomePage() {
         </div>
         
         {/* KANAN: Ornamen Lingkaran & Maskot Gambar Funko POP! */}
-        <div className="absolute right-[-20px] bottom-[-20px] md:right-10 md:-bottom-6 opacity-40 md:opacity-100 pointer-events-none flex items-end justify-center z-10">
+        <div className="absolute right-5 bottom-5 md:right-10 md:-bottom-6 opacity-40 md:opacity-100 pointer-events-none flex items-end justify-center z-10">
           
           {/* Lingkaran Biru (Dibuat center tepat di belakang gambar) */}
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 md:w-[350px] md:h-[350px] bg-blue-400 border-8 border-black rounded-full mix-blend-multiply"></div>
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 md:w-87.5 md:h-87.5 bg-blue-400 border-8 border-black rounded-full mix-blend-multiply"></div>
           
           <img 
             src="/funko-hero.png" 
