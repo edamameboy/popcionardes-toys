@@ -36,8 +36,12 @@ export default function CheckoutPage() {
   const items = useCartStore((state) => state.items);
   const clearCart = useCartStore((state) => state.clearCart);
   
+  const [myVouchers, setMyVouchers] = useState<any[]>([]);
+  const [selectedVoucherId, setSelectedVoucherId] = useState<string>("");
+  const [discountAmount, setDiscountAmount] = useState<number>(0);
+
   const calculatedTotal = items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-  const grandTotal = calculatedTotal + (selectedCourier?.price || 0);
+  const grandTotal = Math.max(0, calculatedTotal + (selectedCourier?.price || 0) - discountAmount);
 
   const [formData, setFormData] = useState({ name: "", phone: "", address: "", postalCode: "" });
 
@@ -74,6 +78,13 @@ export default function CheckoutPage() {
         if (!profileData.full_name || !profileData.phone || !profileData.address || !profileData.postal_code) {
           setIsProfileIncomplete(true);
         }
+        // Ambil kupon yang belum terpakai
+        const { data: vouchersData } = await supabase
+          .from("user_vouchers")
+          .select("*, voucher:vouchers(*)")
+          .eq("user_id", user.id)
+          .eq("is_used", false);
+        setMyVouchers(vouchersData || []);
       }
       setIsAuthChecking(false);
     };
@@ -165,7 +176,9 @@ export default function CheckoutPage() {
           total: calculatedTotal,
           courier: `${selectedCourier.company} - ${selectedCourier.type}`,
           shippingCost: selectedCourier.price,
-          userId: user.id // <-- Data krusial untuk database
+          userId: user.id,
+          userVoucherId: selectedVoucherId || null, // <-- Kirim ID voucher ke backend
+          discountAmount: discountAmount // <-- Kirim nilai diskon ke backend
         }),
       });
 
@@ -309,6 +322,52 @@ export default function CheckoutPage() {
                     {selectedCourier ? formatRupiah(selectedCourier.price) : "Pilih kurir"}
                   </span>
                 </div>
+              </div>
+
+                {/* --- DROPDOWN PILIH KUPON --- */}
+              {myVouchers.length > 0 && (
+                <div className="mb-6 space-y-2 border-b-4 border-black pb-6">
+                  <label className="font-black uppercase text-sm">Pakai Kupon Diskon</label>
+                  <select 
+                    value={selectedVoucherId}
+                    onChange={(e) => {
+                      const vId = e.target.value;
+                      setSelectedVoucherId(vId);
+                      if (!vId) return setDiscountAmount(0);
+                      const selected = myVouchers.find(v => v.id === vId);
+                      setDiscountAmount(selected ? selected.voucher.discount_amount : 0);
+                    }}
+                    className="w-full p-3 border-4 border-black font-bold focus:bg-yellow-200 focus:outline-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
+                  >
+                    <option value="">-- Pilih Kupon Sultan --</option>
+                    {myVouchers.map(v => (
+                      <option key={v.id} value={v.id}>
+                        {v.voucher.name} (- {formatRupiah(v.voucher.discount_amount)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Rincian Harga dengan Potongan Diskon */}
+              <div className="space-y-2 mb-6 border-b-4 border-black pb-6 font-bold text-sm">
+                <div className="flex justify-between">
+                  <span>Subtotal Barang</span>
+                  <span>{formatRupiah(calculatedTotal)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>Ongkos Kirim</span>
+                  <span className={!selectedCourier ? "text-red-500" : ""}>
+                    {selectedCourier ? formatRupiah(selectedCourier.price) : "Pilih kurir"}
+                  </span>
+                </div>
+                {/* Tampilkan baris diskon merah jika ada */}
+                {discountAmount > 0 && (
+                  <div className="flex justify-between items-center text-red-600 font-black text-base mt-2">
+                    <span>Diskon Kupon</span>
+                    <span>- {formatRupiah(discountAmount)}</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-between items-end mb-8">

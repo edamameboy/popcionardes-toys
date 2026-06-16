@@ -4,17 +4,23 @@ import { createClient } from "@/utils/supabase/server";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    // Kita tambahkan penangkapan variabel courier dan shippingCost
-    const { formData, items, total, courier, shippingCost, userId, } = body; 
+    
+    // 1. Tangkap parameter voucher dari frontend
+    const { formData, items, total, courier, shippingCost, userId, userVoucherId, discountAmount } = body; 
 
     const supabase = await createClient();
 
-    // 1. Simpan pesanan ke Supabase (Sekarang dengan ongkir)
+    // 2. Hitung Total Bersih (Subtotal + Ongkir - Diskon)
+    // Gunakan Math.max agar total tidak pernah minus (jika diskon lebih besar dari total belanja)
+    const netTotal = Math.max(0, total + shippingCost - (discountAmount || 0));
+
+    // 3. Masukkan data ke tabel orders, termasuk user_voucher_id
     const { data: newOrder, error: dbError } = await supabase
       .from("orders")
       .insert({
         user_id: userId,
-        total_amount: total + shippingCost, // Total barang + ongkir
+        user_voucher_id: userVoucherId || null, // <-- Menyimpan jejak voucher
+        total_amount: netTotal,
         status: "pending",
         customer_name: formData.name,
         customer_phone: formData.phone,
@@ -25,63 +31,68 @@ export async function POST(request: Request) {
       .select()
       .single();
 
-    if (dbError || !newOrder) {
-      throw new Error("Gagal menyimpan pesanan ke database");
-    }
+    if (dbError) throw dbError;
 
-    // 2. Format daftar barang untuk Midtrans
-    const itemDetails = items.map((item: any) => ({
+    // 4. Siapkan Data untuk Midtrans
+    const authString = Buffer.from(`${process.env.MIDTRANS_SERVER_KEY}:`).toString("base64");
+
+    const midtransItems = items.map((item: any) => ({
       id: item.id,
       price: item.price,
       quantity: item.quantity,
       name: item.name.substring(0, 50),
     }));
 
-    // 3. TAMBAHKAN ONGKIR SEBAGAI ITEM (Wajib agar Midtrans tidak error selisih harga)
-    if (shippingCost > 0) {
-      itemDetails.push({
-        id: "SHIPPING",
-        price: shippingCost,
+    midtransItems.push({
+      id: "SHIPPING",
+      price: shippingCost,
+      quantity: 1,
+      name: `Ongkir: ${courier}`.substring(0, 50),
+    });
+
+    // 5. Trik Midtrans: Tambahkan item khusus untuk Diskon (Harganya Minus!)
+    if (discountAmount > 0) {
+      midtransItems.push({
+        id: "VOUCHER-DISCOUNT",
+        price: -discountAmount, 
         quantity: 1,
-        name: `Ongkir - ${courier}`,
+        name: "Diskon Kupon Sultan",
       });
     }
 
-    // 4. Siapkan Payload Midtrans
     const payload = {
       transaction_details: {
         order_id: newOrder.id,
-        gross_amount: total + shippingCost, // Harus sama dengan total itemDetails
+        gross_amount: netTotal,
       },
+      item_details: midtransItems,
       customer_details: {
         first_name: formData.name,
         phone: formData.phone,
-        shipping_address: { address: formData.address },
+        shipping_address: {
+          first_name: formData.name,
+          phone: formData.phone,
+          address: formData.address,
+          postal_code: formData.postalCode,
+        },
       },
-      item_details: itemDetails,
     };
 
-    const secret = process.env.MIDTRANS_SERVER_KEY + ":";
-    const encodedSecret = Buffer.from(secret).toString("base64");
-
-    const midtransResponse = await fetch("https://app.sandbox.midtrans.com/snap/v1/transactions", {
+    const midtransResponse = await fetch(`${process.env.NEXT_PUBLIC_MIDTRANS_API_URL}/snap/v1/transactions`, {
       method: "POST",
       headers: {
-        Accept: "application/json",
         "Content-Type": "application/json",
-        Authorization: `Basic ${encodedSecret}`,
+        Accept: "application/json",
+        Authorization: `Basic ${authString}`,
       },
       body: JSON.stringify(payload),
     });
 
     const midtransData = await midtransResponse.json();
-
-    if (!midtransResponse.ok) {
-      throw new Error(midtransData.error_messages?.[0] || "Gagal membuat token Midtrans");
-    }
+    if (!midtransResponse.ok) throw new Error(midtransData.error_messages?.[0] || "Gagal membuat transaksi Midtrans");
 
     return NextResponse.json({ token: midtransData.token });
-    
+
   } catch (error: any) {
     console.error("Checkout Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
