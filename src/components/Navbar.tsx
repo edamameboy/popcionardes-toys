@@ -26,10 +26,10 @@ export default function Navbar() {
       setUser(user);
 
       if (user) {
-        // Ambil data username dan avatar dari tabel profiles Supabase
+        // Ambil username, avatar, points, dan role
         const { data: prof } = await supabase
           .from("profiles")
-          .select("username, avatar_url, points")
+          .select("username, avatar_url, points, role")
           .eq("id", user.id)
           .single();
         setProfile(prof);
@@ -44,7 +44,7 @@ export default function Navbar() {
         setUser(session.user);
         const { data: prof } = await supabase
           .from("profiles")
-          .select("username, avatar_url")
+          .select("username, avatar_url, points, role")
           .eq("id", session.user.id)
           .single();
         setProfile(prof);
@@ -57,6 +57,38 @@ export default function Navbar() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // === 3. MATA-MATA REALTIME SUPABASE (Update Poin & Role) ===
+  useEffect(() => {
+    if (!user) return; 
+
+    const profileSubscription = supabase
+      .channel('profile-updates')
+      .on(
+        'postgres_changes',
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'profiles', 
+          filter: `id=eq.${user.id}` 
+        },
+        (payload) => {
+          // Update UI Navbar seketika saat ada perubahan di database
+          setProfile((prev: any) => ({
+            ...prev,
+            points: payload.new.points,
+            username: payload.new.username,
+            avatar_url: payload.new.avatar_url,
+            role: payload.new.role
+          }));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(profileSubscription);
+    };
+  }, [user, supabase]);
+
   // Fungsi untuk Logout
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -68,23 +100,24 @@ export default function Navbar() {
 
   return (
     <nav className="w-full bg-white border-b-4 border-black p-4 flex flex-col sm:flex-row items-center justify-between gap-4 sticky top-0 z-50">
-      {/* === KIRI: Logo Gambar dengan Animasi Neo Brutalism === */}
+      
+      {/* === KIRI: Logo Gambar (Kode yang Anda Minta) === */}
       <Link href="/" className="block hover:skew-x-2 transition-transform select-none active:translate-x-0.5 active:translate-y-0.5">
         <img 
-          src="/logo.png" // <-- Taruh file gambar logo Anda di folder public/logo.png
+          src="/logo.png" 
           alt="Popcionardes Toys Logo" 
-          className="h-18 w-auto object-contain"
+          className="h-20 w-auto object-contain"
         />
       </Link>
 
-      {/* KANAN: Menu Autentikasi & Keranjang */}
+      {/* === KANAN: Menu Autentikasi & Keranjang === */}
       <div className="flex items-center gap-4 flex-wrap justify-center">
         
         {user ? (
           // === KONDISI A: JIKA USER SUDAH LOGIN ===
           <div className="flex items-center h-12 bg-yellow-200 border-4 border-black pl-2 pr-2 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] font-bold transition-all">
             
-            {/* Bagian Profil */}
+            {/* Bagian Profil & Poin */}
             <Link href="/profile" className="flex items-center gap-2 hover:opacity-80 group h-full">
               {profile?.avatar_url && (
                 <img 
@@ -93,18 +126,31 @@ export default function Navbar() {
                   className="w-8 h-8 border-2 border-black bg-white object-cover group-hover:rotate-6 transition-transform"
                 />
               )}
-              <span className="uppercase text-sm tracking-tight hidden sm:block mr-2">
-                {profile?.username || user.email?.split("@")[0]}
-              </span>
-              <span className="text-[10px] font-black bg-black text-yellow-300 px-1 border border-black inline-block w-max -mt-1">
+              <div className="flex flex-col justify-center">
+                <span className="uppercase text-sm tracking-tight hidden sm:block mr-2 leading-tight">
+                  {profile?.username || user.email?.split("@")[0]}
+                </span>
+                {/* Lencana Poin Sultan */}
+                <span className="text-[10px] font-black bg-black text-yellow-300 px-1 border border-black inline-block w-max mt-0.5">
                   🪙 {profile?.points || 0} PTS
                 </span>
+              </div>
             </Link>
             
             {/* Garis Pembatas Vertikal & Tombol Aksi */}
             <div className="flex items-center gap-2 border-l-4 border-black pl-3 ml-1 h-full py-1">
+              
+              {/* TOMBOL RAHASIA ADMIN (Hanya muncul jika role = 'admin') */}
+              {profile?.role === 'admin' && (
+                <Link href="/admin" className="block">
+                  <button className="text-xs font-black uppercase bg-purple-400 text-black border-2 border-black px-2 py-1 hover:bg-black hover:translate-x-0.5 hover:translate-y-0.5 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all">
+                    Admin
+                  </button>
+                </Link>
+              )}
+
               <Link href="/orders" className="block">
-                <button className="text-xs font-black uppercase bg-blue-300 border-2 border-black px-2 py-1 hover:bg-white transition-all active:translate-x-0.5 active:translate-y-0.5 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none">
+                <button className="text-xs font-black uppercase bg-blue-300 border-2 border-black px-2 py-1 hover:bg-white hover:translate-x-0.5 hover:translate-y-0.5 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all">
                   Pesanan
                 </button>
               </Link>
