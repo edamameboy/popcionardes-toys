@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, Suspense } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useCartStore } from "@/store/cart";
-import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 const formatRupiah = (angka: number) => {
   return new Intl.NumberFormat("id-ID", {
@@ -13,143 +13,186 @@ const formatRupiah = (angka: number) => {
   }).format(angka);
 };
 
-export default function HomePage() {
+// ==========================================
+// KOMPONEN GRID PRODUK (Terpisah agar aman dari Next.js Hydration)
+// ==========================================
+function ProductGrid() {
+  const searchParams = useSearchParams();
+  const category = searchParams.get("category") || "Semua";
+  const search = searchParams.get("search") || "";
+
   const [products, setProducts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
+  // Zustand: Fungsi untuk memasukkan barang ke keranjang
   const addItem = useCartStore((state) => state.addItem);
   const supabase = createClient();
 
   useEffect(() => {
     const fetchProducts = async () => {
-      try {
-        // Tarik semua data produk dari database Supabase
-        const { data, error } = await supabase
-          .from("products")
-          .select("*")
-          .order("created_at", { ascending: false });
+      setIsLoading(true);
+      
+      // Susun Query ke Database
+      let query = supabase.from("products").select("*").order("created_at", { ascending: false });
 
-        if (error) throw error;
-        setProducts(data || []);
-      } catch (error: any) {
-        console.error("Gagal mengambil produk:", error.message);
-      } finally {
-        setIsLoading(false);
+      if (category !== "Semua") {
+        query = query.eq("category", category);
       }
+      if (search) {
+        query = query.ilike("name", `%${search}%`);
+      }
+
+      // Batasi 40 produk teratas agar browser tidak meledak meload 8000 gambar sekaligus
+      const { data, error } = await query.limit(40);
+      
+      if (error) console.error(error);
+      else setProducts(data || []);
+      
+      setIsLoading(false);
     };
 
     fetchProducts();
-  }, []);
+  }, [category, search, supabase]);
 
   const handleAddToCart = (product: any) => {
-    if (product.stock <= 0) {
-      alert("Yah, barangnya udah habis bos!");
-      return;
-    }
-
-    const cartItem = {
-      ...product, 
-      price: Number(product.price),
-      quantity: 1,
-    };
-
-    addItem(cartItem);
-    alert(`🔥 ${product.name} berhasil dilempar ke keranjang!`);
+    addItem({
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      quantity: 1, 
+      stock: product.stock,
+      image_url: product.image_url
+    });
+    
+    // Tampilkan notifikasi native sebentar
+    alert(`🛒 ${product.name} berhasil masuk keranjang!`);
   };
 
+  if (isLoading) {
+    return <div className="py-20 text-center font-black text-2xl uppercase animate-pulse">Menggali Harta Karun... 🏴‍☠️</div>;
+  }
+
+  if (products.length === 0) {
+    return (
+      <div className="py-20 text-center border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+        <p className="text-4xl font-black uppercase mb-4">Yah, Kosong! 🕸️</p>
+        <p className="font-bold text-lg">Karakter yang kamu cari belum mendarat di toko kami.</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#fcf8f2] p-6 md:p-12 font-sans space-y-12">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
+      {products.map((product) => (
+        <div key={product.id} className={`flex flex-col border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] transition-all hover:-translate-y-1 relative ${product.bg_color || 'bg-white'}`}>
+          
+          {/* BADGE KATEGORI & ALERT STOK MENIPIS */}
+          <div className="absolute top-2 left-2 flex flex-col gap-1 z-10">
+            <span className="text-[10px] font-black uppercase bg-white border-2 border-black px-1.5 py-0.5 w-max">
+              {product.category}
+            </span>
+            {product.stock <= 5 && product.stock > 0 && (
+              <span className="text-[10px] font-black uppercase bg-red-400 text-white border-2 border-black px-1.5 py-0.5 w-max animate-bounce shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                Sisa {product.stock}!
+              </span>
+            )}
+            {product.stock === 0 && (
+              <span className="text-[10px] font-black uppercase bg-gray-500 text-white border-2 border-black px-1.5 py-0.5 w-max">
+                HABIS (SOLD)
+              </span>
+            )}
+          </div>
+
+          {/* GAMBAR PRODUK (Dengan Trik Mix-Blend Transparan) */}
+          <div className="h-48 p-4 flex items-center justify-center border-b-4 border-black bg-white/40">
+            <img 
+              src={product.image_url} 
+              alt={product.name} 
+              className="max-h-full max-w-full object-contain drop-shadow-xl mix-blend-darken hover:scale-110 transition-transform cursor-pointer"
+            />
+          </div>
+
+          {/* INFO PRODUK & TOMBOL BELI */}
+          <div className="p-3 bg-white flex-1 flex flex-col justify-between">
+            <div>
+              <h3 className="font-black uppercase text-sm leading-tight line-clamp-2 mb-2" title={product.name}>
+                {product.name}
+              </h3>
+              <span className="font-black text-lg bg-yellow-200 px-1 border-2 border-black block w-max mb-3 transform -rotate-2">
+                {formatRupiah(product.price)}
+              </span>
+            </div>
+            
+            <button 
+              onClick={() => handleAddToCart(product)}
+              disabled={product.stock === 0}
+              className={`w-full py-2 font-black uppercase border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all text-xs sm:text-sm
+                ${product.stock === 0 ? 'bg-gray-300 cursor-not-allowed opacity-50' : 'bg-green-400 hover:bg-green-500 active:translate-x-0.5 active:translate-y-0.5 active:shadow-none'}
+              `}
+            >
+              {product.stock === 0 ? "SOLD OUT ❌" : "Sikat! 🛒"}
+            </button>
+          </div>
+
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ==========================================
+// KOMPONEN UTAMA (HALAMAN BERANDA)
+// ==========================================
+export default function HomePage() {
+  return (
+    <div className="p-4 md:p-8 max-w-[1400px] mx-auto space-y-10">
       
-      {/* === HERO SECTION === */}
-      <header className="max-w-5xl mx-auto flex flex-col md:flex-row items-center gap-8 bg-yellow-400 border-4 border-black p-8 md:p-12 shadow-[12px_12px_0px_0px_rgba(0,0,0,1)]">
-        <div className="flex-1 space-y-6">
-          <h1 className="text-5xl md:text-7xl font-black uppercase tracking-tighter leading-none bg-white inline-block px-2 border-4 border-black transform -rotate-2">
-            MAINAN ANEH
+      {/* HERO BANNER NEO BRUTALISM */}
+      <div className="bg-pink-300 border-4 border-black p-6 md:p-12 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden min-h-[350px] flex items-center">
+        
+        {/* KIRI: Teks Banner (Sama persis tidak ada yang diubah) */}
+        <div className="relative z-20 md:w-2/3 space-y-4">
+          <h1 className="text-4xl md:text-6xl font-black uppercase tracking-tighter leading-none bg-white inline-block px-2 border-4 border-black transform -rotate-1">
+            MARKAS BESAR
           </h1>
-          <h2 className="text-3xl md:text-5xl font-black uppercase tracking-tighter leading-none">
-            UNTUK ORANG ANEH.
-          </h2>
-          <p className="font-bold text-lg max-w-md">
-            Lupakan mainan pasaran. Di Popcionardes Toys, kami menjual barang-barang nyentrik yang bikin tetangga kamu bingung.
+          <br />
+          <h1 className="text-4xl md:text-6xl font-black uppercase tracking-tighter leading-none bg-yellow-300 inline-block px-2 border-4 border-black transform rotate-1 mt-2 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+            FUNKO POP! 🧸
+          </h1>
+          <p className="font-bold text-lg max-w-xl mt-4 bg-white p-2 border-2 border-black inline-block shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+            Temukan ribuan koleksi karakter favoritmu dari berbagai universe. Siapkan ruang di rakmu, karena racun belanja dimulai di sini!
           </p>
         </div>
-        <div className="w-full md:w-1/3 flex justify-center sm:flex">
+        
+        {/* KANAN: Ornamen Lingkaran & Maskot Gambar Funko POP! */}
+        <div className="absolute right-[-20px] bottom-[-20px] md:right-10 md:-bottom-6 opacity-40 md:opacity-100 pointer-events-none flex items-end justify-center z-10">
+          
+          {/* Lingkaran Biru (Dibuat center tepat di belakang gambar) */}
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 md:w-[350px] md:h-[350px] bg-blue-400 border-8 border-black rounded-full mix-blend-multiply"></div>
+          
           <img 
-            src="https://api.dicebear.com/7.x/bottts/svg?seed=mascot" 
-            alt="Mascot" 
-            className="w-48 h-48 border-4 border-black bg-white rounded-full shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:rotate-12 transition-transform"
+            src="/funko-hero.png" 
+            alt="Funko Pop Hero" 
+            className="relative z-10 w-48 md:w-80 h-auto object-contain transform -rotate-3 drop-shadow-[8px_8px_0px_rgba(0,0,0,0.8)] transition-transform"
           />
         </div>
-      </header>
 
-      {/* === KATALOG PRODUK DINAMIS === */}
-      <main className="max-w-7xl mx-auto space-y-8">
-        <div className="flex justify-between items-end border-b-4 border-black pb-4">
-          <h2 className="text-4xl font-black uppercase tracking-tighter">
-            Katalog Terbaru
-          </h2>
-        </div>
+      </div>
 
-        {isLoading ? (
-          <div className="flex justify-center items-center h-64 text-2xl font-black uppercase animate-pulse">
-            Membongkar Kardus Mainan... 📦
-          </div>
-        ) : products.length === 0 ? (
-          <div className="bg-white p-8 border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] text-center font-bold text-xl">
-            Gudang masih kosong nih bos. Belum ada mainan yang dijual!
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-            {products.map((product) => (
-              // Perhatikan betapa kerennya kita memanggil product.bg_color di class Tailwind ini!
-              <div 
-                key={product.id} 
-                className={`border-4 border-black p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col transition-all hover:-translate-y-2 hover:shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] ${product.bg_color || 'bg-white'}`}
-              >
-                <div className="bg-white border-4 border-black mb-4 overflow-hidden h-48 flex items-center justify-center">
-                  <img 
-                    src={product.image_url} 
-                    alt={product.name} 
-                    className="object-contain w-full h-full p-4 hover:scale-110 transition-transform" 
-                  />
-                </div>
-                
-                <div className="flex justify-between items-start mb-2 gap-2">
-                  <h3 className="text-xl font-black uppercase leading-tight">
-                    {product.name}
-                  </h3>
-                  <span className="text-xs font-black bg-white border-2 border-black px-2 py-1">
-                    STOK: {product.stock}
-                  </span>
-                </div>
-                
-                <p className="text-sm font-bold opacity-80 mb-6 flex-1">
-                  {product.description}
-                </p>
-                
-                <div className="flex items-center justify-between mt-auto">
-                  <span className="text-xl font-black bg-white px-2 py-1 border-4 border-black transform rotate-2">
-                    {formatRupiah(product.price)}
-                  </span>
-                  
-                  <button 
-                    onClick={() => handleAddToCart(product)}
-                    disabled={product.stock <= 0}
-                    className={`px-4 py-2 font-black uppercase border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all ${
-                      product.stock > 0 
-                      ? "bg-green-400 hover:shadow-none hover:translate-x-1 hover:translate-y-1" 
-                      : "bg-gray-400 cursor-not-allowed text-white shadow-none translate-x-1 translate-y-1"
-                    }`}
-                  >
-                    {product.stock > 0 ? "GAS BELI" : "HABIS"}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </main>
-
+      {/* FILTER PENCARIAN & GRID PRODUK */}
+      <div>
+        <h2 className="text-2xl font-black uppercase mb-6 flex items-center gap-2">
+          <span className="bg-blue-300 px-2 py-1 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transform -rotate-1">
+            🔥 Etalase Mainan
+          </span>
+        </h2>
+        
+        {/* Wajib menggunakan Suspense saat membaca URL params di Next.js 13+ */}
+        <Suspense fallback={<div className="py-20 text-center font-black text-2xl uppercase">Mensinkronisasi Data... ⚙️</div>}>
+          <ProductGrid />
+        </Suspense>
+      </div>
+      
     </div>
   );
 }

@@ -5,21 +5,22 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     
-    // 1. Tangkap parameter voucher dari frontend
+    // 1. Tangkap parameter dari frontend (termasuk list "items")
     const { formData, items, total, courier, shippingCost, userId, userVoucherId, discountAmount } = body; 
 
     const supabase = await createClient();
 
     // 2. Hitung Total Bersih (Subtotal + Ongkir - Diskon)
-    // Gunakan Math.max agar total tidak pernah minus (jika diskon lebih besar dari total belanja)
     const netTotal = Math.max(0, total + shippingCost - (discountAmount || 0));
 
-    // 3. Masukkan data ke tabel orders, termasuk user_voucher_id
+    // ==========================================
+    // 3. JURUS RAHASIA: SIMPAN ITEMS KE SUPABASE
+    // ==========================================
     const { data: newOrder, error: dbError } = await supabase
       .from("orders")
       .insert({
         user_id: userId,
-        user_voucher_id: userVoucherId || null, // <-- Menyimpan jejak voucher
+        user_voucher_id: userVoucherId || null,
         total_amount: netTotal,
         status: "pending",
         customer_name: formData.name,
@@ -27,7 +28,10 @@ export async function POST(request: Request) {
         customer_address: formData.address,
         shipping_cost: shippingCost,
         courier_name: courier,
-      })
+        
+        // Pastikan kita memaksa formatnya menjadi murni JSON
+        items_data: JSON.parse(JSON.stringify(items)) 
+      } as any) // <--- TAMBAHKAN 'as any' DI SINI UNTUK MEMBYPASS SENSOR TYPESCRIPT
       .select()
       .single();
 
@@ -37,24 +41,23 @@ export async function POST(request: Request) {
     const authString = Buffer.from(`${process.env.MIDTRANS_SERVER_KEY}:`).toString("base64");
 
     const midtransItems = items.map((item: any) => ({
-      id: item.id,
-      price: item.price,
+      id: String(item.id).substring(0, 50),
+      price: Math.round(item.price),
       quantity: item.quantity,
-      name: item.name.substring(0, 50),
+      name: String(item.name).substring(0, 50),
     }));
 
     midtransItems.push({
       id: "SHIPPING",
-      price: shippingCost,
+      price: Math.round(shippingCost),
       quantity: 1,
       name: `Ongkir: ${courier}`.substring(0, 50),
     });
 
-    // 5. Trik Midtrans: Tambahkan item khusus untuk Diskon (Harganya Minus!)
     if (discountAmount > 0) {
       midtransItems.push({
         id: "VOUCHER-DISCOUNT",
-        price: -discountAmount, 
+        price: -Math.round(discountAmount), 
         quantity: 1,
         name: "Diskon Kupon Sultan",
       });
@@ -63,7 +66,7 @@ export async function POST(request: Request) {
     const payload = {
       transaction_details: {
         order_id: newOrder.id,
-        gross_amount: netTotal,
+        gross_amount: Math.round(netTotal),
       },
       item_details: midtransItems,
       customer_details: {
@@ -78,7 +81,8 @@ export async function POST(request: Request) {
       },
     };
 
-    const midtransResponse = await fetch(`${process.env.NEXT_PUBLIC_MIDTRANS_API_URL}/snap/v1/transactions`, {
+    const MIDTRANS_URL = process.env.NEXT_PUBLIC_MIDTRANS_API_URL || "https://app.sandbox.midtrans.com";
+    const midtransResponse = await fetch(`${MIDTRANS_URL}/snap/v1/transactions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
