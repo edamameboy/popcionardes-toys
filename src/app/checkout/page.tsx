@@ -15,6 +15,55 @@ const formatRupiah = (angka: number) => {
   }).format(angka);
 };
 
+const calculateVoucherDiscount = (cartItems: any[], voucher: any) => {
+  if (!voucher) return 0;
+  let discountTotal = 0;
+  const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+  // A. DISKON PERSEN
+  if (voucher.type === 'PERCENTAGE') {
+    if (subtotal >= (voucher.min_purchase || 0)) {
+      discountTotal = subtotal * (voucher.discount_value / 100);
+      if (voucher.max_discount > 0 && discountTotal > voucher.max_discount) {
+        discountTotal = voucher.max_discount;
+      }
+    }
+  } 
+  // B. DISKON NOMINAL (Mengakomodasi sistem lama & baru)
+  else if (voucher.type === 'FIXED' || voucher.discount_amount > 0) {
+    if (subtotal >= (voucher.min_purchase || 0)) {
+      discountTotal = voucher.discount_value || voucher.discount_amount;
+    }
+  }
+  // C. 🛒 BUY X GET Y (PRODUK TERMURAH GRATIS)
+  else if (voucher.type === 'BUY_X_GET_Y') {
+    const minQty = voucher.details?.min_qty_required || 2;
+    const freeQty = voucher.details?.free_qty_given || 1;
+    const totalItemsInCart = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+
+    if (totalItemsInCart >= minQty) {
+      // Pecah keranjang jadi array harga satuan [100000, 50000, 50000]
+      let allPrices: number[] = [];
+      cartItems.forEach(item => {
+        for (let i = 0; i < item.quantity; i++) { allPrices.push(item.price); }
+      });
+      // Urutkan dari yang termurah ke termahal
+      allPrices.sort((a, b) => a - b);
+
+      // Hitung kelipatan gratisnya
+      const timesPromoApplied = Math.floor(totalItemsInCart / minQty);
+      const totalFreeItems = timesPromoApplied * freeQty;
+
+      // Jumlahkan N barang termurah sebagai nilai diskon
+      for (let i = 0; i < totalFreeItems; i++) {
+        if (allPrices[i]) discountTotal += allPrices[i];
+      }
+    }
+  }
+
+  return discountTotal;
+};
+
 export default function CheckoutPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -120,6 +169,18 @@ export default function CheckoutPage() {
       getRates();
     }
   }, [formData.postalCode]);
+
+  useEffect(() => {
+    if (!selectedVoucherId) {
+      setDiscountAmount(0);
+      return;
+    }
+    const selected = myVouchers.find(v => v.id === selectedVoucherId);
+    if (selected && selected.voucher) {
+      const calculatedDiscount = calculateVoucherDiscount(items, selected.voucher);
+      setDiscountAmount(calculatedDiscount);
+    }
+  }, [selectedVoucherId, items, myVouchers]);
 
   if (!mounted || isAuthChecking) return (
     <div className="min-h-[70vh] flex items-center justify-center font-black text-2xl uppercase">
@@ -311,41 +372,32 @@ export default function CheckoutPage() {
                 ))}
               </div>
 
-              <div className="space-y-2 mb-6 border-b-4 border-black pb-6 font-bold text-sm">
-                <div className="flex justify-between">
-                  <span>Subtotal Barang</span>
-                  <span>{formatRupiah(calculatedTotal)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span>Ongkos Kirim</span>
-                  <span className={!selectedCourier ? "text-red-500" : ""}>
-                    {selectedCourier ? formatRupiah(selectedCourier.price) : "Pilih kurir"}
-                  </span>
-                </div>
-              </div>
-
                 {/* --- DROPDOWN PILIH KUPON --- */}
               {myVouchers.length > 0 && (
                 <div className="mb-6 space-y-2 border-b-4 border-black pb-6">
                   <label className="font-black uppercase text-sm">Pakai Kupon Diskon</label>
                   <select 
-                    value={selectedVoucherId}
-                    onChange={(e) => {
-                      const vId = e.target.value;
-                      setSelectedVoucherId(vId);
-                      if (!vId) return setDiscountAmount(0);
-                      const selected = myVouchers.find(v => v.id === vId);
-                      setDiscountAmount(selected ? selected.voucher.discount_amount : 0);
-                    }}
-                    className="w-full p-3 border-4 border-black font-bold focus:bg-yellow-200 focus:outline-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
-                  >
-                    <option value="">-- Pilih Kupon Sultan --</option>
-                    {myVouchers.map(v => (
+                  value={selectedVoucherId}
+                  onChange={(e) => setSelectedVoucherId(e.target.value)} // Cukup set ID saja, useEffect akan menghitung nominalnya
+                  className="w-full p-3 border-4 border-black font-bold focus:bg-yellow-200 focus:outline-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
+                >
+                  <option value="">-- Pilih Kupon Sultan --</option>
+                  {myVouchers.map(v => {
+                    // Buat label diskon yang cantik sesuai tipenya
+                    let discountLabel = "";
+                    if (v.voucher.type === 'PERCENTAGE') discountLabel = `Diskon ${v.voucher.discount_value}%`;
+                    else if (v.voucher.type === 'FIXED') discountLabel = `Potongan ${formatRupiah(v.voucher.discount_value || v.voucher.discount_amount)}`;
+                    else if (v.voucher.type === 'BUY_X_GET_Y') discountLabel = `Beli ${v.voucher.details?.min_qty_required || 2} Gratis ${v.voucher.details?.free_qty_given || 1}`;
+                    else if (v.voucher.type === 'FREE_ITEM') discountLabel = "Gratis Produk";
+                    else discountLabel = `Potongan ${formatRupiah(v.voucher.discount_amount)}`; // Fallback sistem lama
+
+                    return (
                       <option key={v.id} value={v.id}>
-                        {v.voucher.name} (- {formatRupiah(v.voucher.discount_amount)})
+                        {v.voucher.name} ({discountLabel})
                       </option>
-                    ))}
-                  </select>
+                    )
+                  })}
+                </select>
                 </div>
               )}
 
