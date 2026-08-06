@@ -3,6 +3,12 @@
 import React, { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
+import dynamic from 'next/dynamic';
+
+const MapPicker = dynamic(() => import('@/components/MapPicker'), {
+  ssr: false,
+  loading: () => <div className="h-72 w-full bg-gray-200 border-4 border-black flex items-center justify-center font-black uppercase mt-4">Memuat Peta... 🌍</div>
+});
 
 const formatRupiah = (angka: number) => {
   return new Intl.NumberFormat("id-ID", {
@@ -18,7 +24,7 @@ export default function ProfilePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("personal");
 
-  const [formData, setFormData] = useState({ username: "", full_name: "", phone: "", postal_code: "", address: "", avatar_url: "" });
+  const [formData, setFormData] = useState({ username: "", full_name: "", phone: "", postal_code: "", address: "", avatar_url: "", latitude: "", longitude: "" });
   const [userPoints, setUserPoints] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -50,6 +56,7 @@ export default function ProfilePage() {
         setFormData({
           username: profileData.username || "", full_name: profileData.full_name || "", phone: profileData.phone || "",
           postal_code: profileData.postal_code || "", address: profileData.address || "", avatar_url: profileData.avatar_url || "",
+          latitude: profileData.latitude || "", longitude: profileData.longitude || ""
         });
         setUserPoints(profileData.points || 0);
       }
@@ -174,8 +181,25 @@ export default function ProfilePage() {
                     <div className="space-y-2"><label className="font-bold uppercase text-sm">Nama Lengkap</label><input type="text" value={formData.full_name} onChange={(e) => setFormData({...formData, full_name: e.target.value})} className="w-full p-3 border-4 border-black bg-gray-50 font-bold" /></div>
                     <div className="space-y-2"><label className="font-bold uppercase text-sm">Nomor HP</label><input type="text" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} className="w-full p-3 border-4 border-black bg-gray-50 font-bold" /></div>
                     <div className="space-y-2"><label className="font-bold uppercase text-sm text-red-600">Kode Pos</label><input type="text" maxLength={5} value={formData.postal_code} onChange={(e) => setFormData({...formData, postal_code: e.target.value})} className="w-full p-3 border-4 border-black bg-yellow-200 focus:bg-white font-black tracking-widest" /></div>
+                    <div className="space-y-2"><label className="font-bold uppercase text-sm text-blue-600">Latitude</label><input type="text" placeholder="-6.200000" value={formData.latitude} onChange={(e) => setFormData({...formData, latitude: e.target.value})} className="w-full p-3 border-4 border-black bg-blue-100 focus:bg-white font-bold" /></div>
+                    <div className="space-y-2"><label className="font-bold uppercase text-sm text-blue-600">Longitude</label><input type="text" placeholder="106.816666" value={formData.longitude} onChange={(e) => setFormData({...formData, longitude: e.target.value})} className="w-full p-3 border-4 border-black bg-blue-100 focus:bg-white font-bold" /></div>
                   </div>
-                  <div className="space-y-2"><label className="font-bold uppercase text-sm">Alamat Lengkap</label><textarea rows={3} value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} className="w-full p-3 border-4 border-black bg-gray-50 font-bold resize-none" /></div>
+                  <div className="space-y-2">
+                    <label className="font-bold uppercase text-sm">Alamat Lengkap</label>
+                    <textarea rows={3} value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} className="w-full p-3 border-4 border-black bg-gray-50 font-bold resize-none" />
+                  </div>
+                  
+                  <div className="space-y-2 mt-4">
+                    <label className="font-bold uppercase text-sm">Titik Kordinat (Untuk Pengiriman Instan)</label>
+                    <p className="text-xs font-bold text-gray-500 mb-2">Geser pin peta ke lokasi rumahmu atau klik pada titik yang tepat.</p>
+                    <MapPicker 
+                      latitude={formData.latitude} 
+                      longitude={formData.longitude} 
+                      onChange={(lat, lng) => setFormData({...formData, latitude: lat, longitude: lng})}
+                      addressToSearch={formData.address && formData.postal_code ? `${formData.address}, ${formData.postal_code}` : formData.postal_code}
+                    />
+                  </div>
+                  
                 </div>
               </div>
               <button onClick={handleSaveProfile} disabled={isSaving} className="w-full py-4 text-xl font-black uppercase border-4 border-black bg-green-400 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all">{isSaving ? "Menyimpan..." : "Simpan Profil"}</button>

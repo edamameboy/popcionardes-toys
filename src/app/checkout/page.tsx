@@ -95,12 +95,28 @@ export default function CheckoutPage() {
   const [formData, setFormData] = useState({ name: "", phone: "", address: "", postalCode: "" });
   const [couriers, setCouriers] = useState<any[]>([]);
   const [selectedCourier, setSelectedCourier] = useState<any>(null);
+  const [selectedCompany, setSelectedCompany] = useState<string>("");
   const [isFetchingShipping, setIsFetchingShipping] = useState(false);
 
   // State Voucher Sultan
   const [myVouchers, setMyVouchers] = useState<any[]>([]);
   const [selectedVoucherId, setSelectedVoucherId] = useState<string>("");
   const [discountAmount, setDiscountAmount] = useState<number>(0);
+
+  // Group couriers
+  const groupedCouriers = Object.entries(
+    couriers.reduce((acc: any, curr: any) => {
+      if (!acc[curr.company]) acc[curr.company] = { name: curr.company, services: [] };
+      acc[curr.company].services.push(curr);
+      return acc;
+    }, {})
+  ).map(([_, value]: any) => value);
+
+  useEffect(() => {
+    if (groupedCouriers.length > 0 && !selectedCompany) {
+      setSelectedCompany(groupedCouriers[0].name);
+    }
+  }, [groupedCouriers, selectedCompany]);
 
   useEffect(() => {
     setMounted(true);
@@ -123,8 +139,8 @@ export default function CheckoutPage() {
         address: profile.address,
         postalCode: profile.postal_code,
       });
-      // Tarik Ongkir Otomatis dari kodepos
-      fetchShippingOptions(profile.postal_code);
+      // Tarik Ongkir Otomatis dari kodepos dan kordinat
+      fetchShippingOptions(profile.postal_code, profile.latitude, profile.longitude);
     }
 
     // 2. Tarik Kupon Promo Milik User
@@ -136,14 +152,18 @@ export default function CheckoutPage() {
     setMyVouchers(vouchersData || []);
   };
 
-  const fetchShippingOptions = async (postalCode: string) => {
+  const fetchShippingOptions = async (postalCode: string, latitude?: string, longitude?: string) => {
     if (!postalCode || postalCode.length < 5) return;
     setIsFetchingShipping(true);
     try {
       const res = await fetch("/api/shipping", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ destinationPostalCode: postalCode }),
+        body: JSON.stringify({ 
+          destinationPostalCode: postalCode,
+          latitude: latitude || null,
+          longitude: longitude || null
+        }),
       });
       const data = await res.json();
       if (data.rates) setCouriers(data.rates);
@@ -262,12 +282,18 @@ export default function CheckoutPage() {
         <div className="space-y-8">
           
           <div className="bg-white p-6 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
-            <h2 className="text-2xl font-black uppercase mb-6 bg-pink-300 inline-block px-2 border-2 border-black">Alamat Tujuan</h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-black uppercase bg-pink-300 inline-block px-2 border-2 border-black">Alamat Tujuan</h2>
+              <Link href="/profile">
+                <button className="px-3 py-1 bg-yellow-300 font-black uppercase border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all text-xs">
+                  Ubah Alamat
+                </button>
+              </Link>
+            </div>
             <div className="space-y-4 font-bold text-sm">
               <p className="uppercase text-lg border-b-2 border-black pb-2">{formData.name} <span className="text-gray-500 text-sm">({formData.phone})</span></p>
               <p className="leading-relaxed">{formData.address}</p>
               <p className="bg-yellow-200 inline-block px-2 py-1 border-2 border-black">Kodepos: {formData.postalCode}</p>
-              <p className="text-xs text-blue-600 mt-2">*Untuk mengubah alamat, silakan pergi ke halaman Profil.</p>
             </div>
           </div>
 
@@ -278,19 +304,43 @@ export default function CheckoutPage() {
             ) : couriers.length === 0 ? (
               <p className="font-bold text-red-600">Kurir tidak tersedia ke kodepos tersebut.</p>
             ) : (
-              <div className="space-y-3">
-                {couriers.map((courier, index) => (
-                  <label key={index} className={`flex justify-between items-center p-4 border-4 border-black cursor-pointer transition-all ${selectedCourier?.company === courier.company && selectedCourier?.type === courier.type ? "bg-yellow-200 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]" : "bg-gray-50 hover:bg-gray-100"}`}>
-                    <div className="flex items-center gap-3">
-                      <input type="radio" name="courier" className="w-5 h-5 accent-black" checked={selectedCourier?.company === courier.company && selectedCourier?.type === courier.type} onChange={() => setSelectedCourier(courier)} />
-                      <div>
-                        <p className="font-black uppercase">{courier.company} - {courier.type}</p>
-                        <p className="text-xs font-bold opacity-70">Estimasi: {courier.estimated_delivery} hari</p>
-                      </div>
-                    </div>
-                    <span className="font-black text-lg">{formatRupiah(courier.price)}</span>
-                  </label>
-                ))}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="font-black uppercase text-sm">Pilih Logistik</label>
+                  <select 
+                    value={selectedCompany} 
+                    onChange={(e) => {
+                      setSelectedCompany(e.target.value);
+                      setSelectedCourier(null);
+                    }}
+                    className="w-full p-3 border-4 border-black font-bold focus:bg-yellow-200 focus:outline-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] uppercase"
+                  >
+                    {groupedCouriers.map((group: any) => (
+                      <option key={group.name} value={group.name}>{group.name.toUpperCase()}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {selectedCompany && (
+                  <div className="space-y-3 mt-4 border-t-4 border-black pt-4">
+                    <label className="font-black uppercase text-sm">Opsi Layanan</label>
+                    {groupedCouriers.find((g: any) => g.name === selectedCompany)?.services.map((courier: any, index: number) => (
+                      <label key={index} onClick={() => setSelectedCourier(courier)} className={`block p-4 border-4 border-black cursor-pointer transition-all ${selectedCourier?.company === courier.company && selectedCourier?.type === courier.type ? "bg-black text-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]" : "bg-white hover:bg-gray-100 text-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"}`}>
+                        <div className="flex flex-col gap-1">
+                          <p className="font-black uppercase text-sm">{courier.company} ({courier.type})</p>
+                          <p className={`text-xs font-bold ${selectedCourier?.company === courier.company && selectedCourier?.type === courier.type ? "text-gray-300" : "text-gray-600"}`}>
+                            Estimasi: {courier.duration || courier.shipment_duration_range} {courier.shipment_duration_unit === 'hours' ? 'Jam' : courier.duration ? '' : 'Hari'}
+                          </p>
+                          <div className="mt-2">
+                            <span className="font-black text-sm bg-white text-black px-2 py-1 border-2 border-black inline-block">
+                              {formatRupiah(courier.price)}
+                            </span>
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -338,33 +388,36 @@ export default function CheckoutPage() {
             <h2 className="text-2xl font-black uppercase mb-6 bg-green-400 inline-block px-2 border-2 border-black">Ringkasan</h2>
             
             {/* DROPDOWN KUPON PROMO */}
-            {myVouchers.length > 0 && (
-              <div className="mb-6 space-y-2 border-b-4 border-black pb-6">
-                <label className="font-black uppercase text-sm">Pakai Kupon Diskon</label>
-                <select 
-                  value={selectedVoucherId}
-                  onChange={(e) => setSelectedVoucherId(e.target.value)} // Cukup set ID saja, useEffect akan menghitung nominalnya
-                  className="w-full p-3 border-4 border-black font-bold focus:bg-yellow-200 focus:outline-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
-                >
+            <div className="mb-6 space-y-2 border-b-4 border-black pb-6">
+              <label className="font-black uppercase text-sm">Pakai Kupon Diskon</label>
+              <select 
+                value={selectedVoucherId}
+                onChange={(e) => setSelectedVoucherId(e.target.value)} // Cukup set ID saja, useEffect akan menghitung nominalnya
+                disabled={myVouchers.length === 0}
+                className="w-full p-3 border-4 border-black font-bold focus:bg-yellow-200 focus:outline-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+              >
+                {myVouchers.length === 0 ? (
+                  <option value="">-- Tidak ada kupon tersedia --</option>
+                ) : (
                   <option value="">-- Pilih Kupon Sultan --</option>
-                  {myVouchers.map(v => {
-                    // Buat label diskon yang cantik sesuai tipenya
-                    let discountLabel = "";
-                    if (v.voucher.type === 'PERCENTAGE') discountLabel = `Diskon ${v.voucher.discount_value}%`;
-                    else if (v.voucher.type === 'FIXED') discountLabel = `Potongan ${formatRupiah(v.voucher.discount_value || v.voucher.discount_amount)}`;
-                    else if (v.voucher.type === 'BUY_X_GET_Y') discountLabel = `Beli ${v.voucher.details?.min_qty_required || 2} Gratis ${v.voucher.details?.free_qty_given || 1}`;
-                    else if (v.voucher.type === 'FREE_ITEM') discountLabel = "Gratis Produk";
-                    else discountLabel = `Potongan ${formatRupiah(v.voucher.discount_amount)}`; // Fallback sistem lama
+                )}
+                {myVouchers.map(v => {
+                  // Buat label diskon yang cantik sesuai tipenya
+                  let discountLabel = "";
+                  if (v.voucher.type === 'PERCENTAGE') discountLabel = `Diskon ${v.voucher.discount_value}%`;
+                  else if (v.voucher.type === 'FIXED') discountLabel = `Potongan ${formatRupiah(v.voucher.discount_value || v.voucher.discount_amount)}`;
+                  else if (v.voucher.type === 'BUY_X_GET_Y') discountLabel = `Beli ${v.voucher.details?.min_qty_required || 2} Gratis ${v.voucher.details?.free_qty_given || 1}`;
+                  else if (v.voucher.type === 'FREE_ITEM') discountLabel = "Gratis Produk";
+                  else discountLabel = `Potongan ${formatRupiah(v.voucher.discount_amount)}`; // Fallback sistem lama
 
-                    return (
-                      <option key={v.id} value={v.id}>
-                        {v.voucher.name} ({discountLabel})
-                      </option>
-                    )
-                  })}
-                </select>
-              </div>
-            )}
+                  return (
+                    <option key={v.id} value={v.id}>
+                      {v.voucher.name} ({discountLabel})
+                    </option>
+                  )
+                })}
+              </select>
+            </div>
 
             {/* RINCIAN BIAYA */}
             <div className="space-y-2 mb-6 border-b-4 border-black pb-6 font-bold text-sm">
