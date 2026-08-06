@@ -8,7 +8,7 @@ export default function AddToCartButton({ product }: { product: Product }) {
   const addItem = useCartStore((state) => state.addItem);
 
   const handleAdd = () => {
-    addItem(product);
+    addItem({ ...product, image_url: product.image_url || undefined, quantity: 1 });
     alert(`⚡ Mantap! ${product.name} masuk keranjang!`);
   };
 
