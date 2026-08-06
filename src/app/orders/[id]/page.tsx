@@ -21,8 +21,13 @@ export default function OrderDetailPage() {
   const [mounted, setMounted] = useState(false);
   const [order, setOrder] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false); // <--- State baru untuk mendeteksi Admin
+  const [isAdmin, setIsAdmin] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // Tracking State
+  const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
+  const [trackingData, setTrackingData] = useState<any>(null);
+  const [isTrackingLoading, setIsTrackingLoading] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -34,12 +39,10 @@ export default function OrderDetailPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return router.push("/login");
 
-      // Cek apakah user ini adalah Admin
       const { data: profileData } = await supabase.from("profiles").select("role").eq("id", user.id).single();
       const userIsAdmin = profileData?.role === "admin";
       setIsAdmin(userIsAdmin);
 
-      // Ambil detail order
       const { data: orderData, error } = await supabase
         .from("orders")
         .select("*, voucher:user_vouchers(vouchers(*))")
@@ -48,7 +51,6 @@ export default function OrderDetailPage() {
 
       if (error) throw error;
 
-      // 🛡️ Proteksi Keamanan: Izinkan HANYA JIKA dia pembeli aslinya ATAU dia seorang Admin
       if (orderData.user_id !== user.id && !userIsAdmin) {
         alert("🚨 AKSES ILEGAL: Anda tidak berhak melihat pesanan ini!");
         return router.push("/orders");
@@ -62,8 +64,8 @@ export default function OrderDetailPage() {
     }
   };
 
-  const handleSyncPayment = async () => {
-    setIsSyncing(true);
+  const handleSyncPayment = async (silent = false) => {
+    if (!silent) setIsSyncing(true);
     try {
       const res = await fetch("/api/orders/sync", {
         method: "POST",
@@ -73,18 +75,54 @@ export default function OrderDetailPage() {
       const data = await res.json();
       if (res.ok) {
         if (data.status !== order.status) {
-          alert(`Status pesanan diperbarui menjadi: ${data.status}`);
+          if (!silent) alert(`Status pesanan diperbarui menjadi: ${data.status}`);
           fetchOrderDetail();
         } else {
-          alert("Status belum berubah di Midtrans.");
+          if (!silent) alert("Status belum berubah di Midtrans.");
         }
       } else {
-        alert(`Gagal sinkronisasi: ${data.error || data.message}`);
+        if (!silent) alert(`Gagal sinkronisasi: ${data.error || data.message}`);
       }
     } catch (error: any) {
-      alert(`Error: ${error.message}`);
+      if (!silent) alert(`Error: ${error.message}`);
     } finally {
-      setIsSyncing(false);
+      if (!silent) setIsSyncing(false);
+    }
+  };
+
+  // Auto-polling tiap 10 detik jika status masih pending
+  useEffect(() => {
+    let interval: any;
+    if (order && order.status === "pending") {
+      interval = setInterval(() => {
+        handleSyncPayment(true);
+      }, 10000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [order]);
+
+  const handleTrackPackage = async () => {
+    setIsTrackingModalOpen(true);
+    if (trackingData) return; // Jika sudah ada, jangan fetch lagi
+
+    setIsTrackingLoading(true);
+    try {
+      const res = await fetch(`/api/shipping/track?id=${order.biteship_tracking_id}&courier=${order.courier_name}`);
+      const data = await res.json();
+      if (res.ok) {
+        setTrackingData(data);
+      } else {
+        alert("Gagal melacak pesanan.");
+        setIsTrackingModalOpen(false);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Terjadi kesalahan jaringan saat melacak.");
+      setIsTrackingModalOpen(false);
+    } finally {
+      setIsTrackingLoading(false);
     }
   };
 
@@ -95,12 +133,12 @@ export default function OrderDetailPage() {
   const nilaiDiskon = order.voucher?.vouchers?.discount_amount || 0;
 
   return (
-    <div className="p-6 md:p-12 max-w-4xl mx-auto space-y-8">
-      
-      {/* TOMBOL KEMBALI DINAMIS (Beda arah untuk Admin dan Pembeli) */}
-      <Link href={isAdmin ? "/admin" : "/orders"} className="inline-block">
+    <div className="p-6 md:p-12 max-w-4xl mx-auto space-y-8 relative">
+
+      {/* TOMBOL KEMBALI DINAMIS */}
+      <Link href="/orders" className="inline-block">
         <button className="px-4 py-2 font-black uppercase bg-white border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all text-sm">
-          ⬅️ Kembali ke {isAdmin ? "Ruang Admin" : "Daftar Pesanan"}
+          ⬅️ Kembali ke Daftar Pesanan
         </button>
       </Link>
 
@@ -118,14 +156,15 @@ export default function OrderDetailPage() {
           <span className={`text-sm font-black uppercase tracking-wider px-4 py-2 border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]
             ${order.status === "paid" && "bg-green-400"}
             ${order.status === "shipped" && "bg-blue-400 text-white"}
+            ${order.status === "completed" && "bg-emerald-500 text-white"}
             ${order.status === "pending" && "bg-amber-300"}
             ${order.status === "cancelled" && "bg-red-400 text-white"}
           `}>
-            {order.status === "shipped" ? "🚚 DIKIRIM" : order.status === "paid" ? "✅ LUNAS" : order.status === "pending" ? "⏳ MENUNGGU BAYAR" : "❌ BATAL"}
+            {order.status === "shipped" ? "🚚 DIKIRIM" : order.status === "paid" ? "✅ LUNAS" : order.status === "completed" ? "🏁 SELESAI" : order.status === "pending" ? "⏳ MENUNGGU BAYAR" : "❌ BATAL"}
           </span>
           {order.status === "pending" && (
-            <button 
-              onClick={handleSyncPayment}
+            <button
+              onClick={() => handleSyncPayment(false)}
               disabled={isSyncing}
               className="text-xs font-black bg-blue-300 hover:bg-blue-400 border-2 border-black px-3 py-1 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all"
             >
@@ -178,16 +217,77 @@ export default function OrderDetailPage() {
             <p className="text-xs font-bold opacity-80 mt-3 leading-relaxed border-t-2 border-black pt-2">📍 {order.customer_address}</p>
           </div>
 
-          {order.status === "shipped" && order.biteship_tracking_id && (
-            <div className="bg-blue-100 border-4 border-black p-6 shadow-[6px_6px_0px_0px_rgba(59,130,246,1)] text-center space-y-3">
-              <h2 className="text-lg font-black uppercase bg-white text-blue-600 inline-block px-2 border-2 border-black">Paket Di Jalan! 🚚</h2>
-              <div className="bg-white p-2 border-2 border-black font-mono font-black text-lg tracking-wider select-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+          {order.biteship_tracking_id && (
+            <div className="bg-blue-100 border-4 border-black p-6 shadow-[6px_6px_0px_0px_rgba(59,130,246,1)] text-center space-y-4">
+              <h2 className="text-lg font-black uppercase bg-white text-blue-600 inline-block px-2 border-2 border-black">Resi Terinput 🚚</h2>
+              <div className="bg-white p-2 border-2 border-black font-mono font-black text-sm tracking-wider select-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] break-words">
                 {order.biteship_tracking_id}
               </div>
+              <button
+                onClick={handleTrackPackage}
+                className="w-full bg-yellow-400 hover:bg-yellow-500 text-black font-black uppercase border-2 border-black px-4 py-2 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all text-sm"
+              >
+                📍 Lacak Pesanan
+              </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* TRACKING MODAL */}
+      {isTrackingModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-opacity-70 backdrop-blur-sm">
+          <div className="bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] w-full max-w-lg max-h-[80vh] flex flex-col relative">
+
+            {/* Modal Header */}
+            <div className="p-4 border-b-4 border-black bg-yellow-300 flex justify-between items-center sticky top-0 z-10">
+              <h2 className="text-xl font-black uppercase tracking-wider">Histori Pelacakan</h2>
+              <button onClick={() => setIsTrackingModalOpen(false)} className="text-black font-black text-xl hover:scale-125 transition-transform bg-white border-2 border-black w-8 h-8 flex items-center justify-center rounded-full leading-none">×</button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto bg-[#f8f9fa] flex-1">
+              {isTrackingLoading ? (
+                <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                  <div className="w-12 h-12 border-4 border-black border-t-blue-500 rounded-full animate-spin"></div>
+                  <p className="font-black uppercase tracking-widest text-sm animate-pulse">Menghubungi Kurir...</p>
+                </div>
+              ) : trackingData ? (
+                <div className="space-y-6">
+                  {/* Courier Info Header */}
+                  <div className="flex justify-between items-center bg-white p-3 border-2 border-black font-bold uppercase text-xs">
+                    <span>Kurir: <span className="bg-black text-white px-2 py-0.5">{trackingData.courier || order.courier_name}</span></span>
+                    <span>Resi: <span className="bg-gray-200 px-2 py-0.5 border border-black">{trackingData.tracking_id}</span></span>
+                  </div>
+
+                  {/* Timeline */}
+                  <div className="relative border-l-4 border-black ml-4 space-y-8 pb-4">
+                    {trackingData.history && trackingData.history.length > 0 ? trackingData.history.map((hist: any, index: number) => (
+                      <div key={index} className="relative pl-6">
+                        <div className="absolute w-4 h-4 bg-blue-500 border-2 border-black rounded-full -left-[10px] top-1"></div>
+                        <div className="bg-white p-3 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all">
+                          <p className="text-xs font-black bg-gray-200 inline-block px-1 border border-black mb-1">
+                            {new Date(hist.updated_at).toLocaleString("id-ID", { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                          <p className="font-bold text-sm mt-1">{hist.note}</p>
+                          <p className="text-xs uppercase mt-2 opacity-60 font-bold">{hist.status}</p>
+                        </div>
+                      </div>
+                    )) : (
+                      <div className="text-center font-bold p-4 bg-white border-2 border-dashed border-black">Belum ada riwayat perjalanan.</div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center font-black uppercase py-8 text-red-500">
+                  Gagal memuat data pelacakan.
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }

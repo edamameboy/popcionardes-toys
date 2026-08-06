@@ -14,6 +14,12 @@ export async function POST(request: Request) {
 
     const supabase = await createClient();
 
+    // BACKEND API PROTECTION (Layer 2)
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized. Harap login terlebih dahulu." }, { status: 401 });
+    }
+
     // ==========================================
     // 1. CEK CACHE DI SUPABASE DULU (GRATIS!)
     // ==========================================

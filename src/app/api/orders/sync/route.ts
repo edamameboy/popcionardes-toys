@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@/utils/supabase/server";
 
 export async function POST(request: Request) {
   try {
     const { order_id } = await request.json();
     if (!order_id) {
       return NextResponse.json({ error: "Missing order_id" }, { status: 400 });
+    }
+
+    // BACKEND API PROTECTION
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const serverKey = process.env.MIDTRANS_SERVER_KEY || "";
@@ -29,7 +37,7 @@ export async function POST(request: Request) {
     const transaction_status = midtransData.transaction_status;
     const transaction_id = midtransData.transaction_id;
 
-    const supabaseAdmin = createClient(
+    const supabaseAdmin = createSupabaseClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
