@@ -29,35 +29,45 @@ const calculateVoucherDiscount = (cartItems: any[], voucher: any) => {
       }
     }
   } 
-  // B. DISKON NOMINAL (Mengakomodasi sistem lama & baru)
-  else if (voucher.type === 'FIXED' || voucher.discount_amount > 0) {
-    if (subtotal >= (voucher.min_purchase || 0)) {
-      discountTotal = voucher.discount_value || voucher.discount_amount;
-    }
-  }
-  // C. 🛒 BUY X GET Y (PRODUK TERMURAH GRATIS)
+  
+  // B. 🛒 BUY X GET Y (PRODUK TERMURAH GRATIS)
+  // Dipindah ke atas agar aman dari deteksi sistem poin/voucher lama
   else if (voucher.type === 'BUY_X_GET_Y') {
-    const minQty = voucher.details?.min_qty_required || 2;
-    const freeQty = voucher.details?.free_qty_given || 1;
+    const buyX = voucher.details?.min_qty_required || 1; // Jumlah yang DIBAYAR
+    const getY = voucher.details?.free_qty_given || 1;   // Jumlah GRATIS
+    
+    // RUMUS YANG BENAR: Total 1 Paket = Bayar (X) + Gratis (Y)
+    const groupSize = buyX + getY; 
+
     const totalItemsInCart = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
-    if (totalItemsInCart >= minQty) {
-      // Pecah keranjang jadi array harga satuan [100000, 50000, 50000]
+    // Cek apakah keranjang memenuhi minimal 1 paket promo
+    if (totalItemsInCart >= groupSize) {
+      
+      // Pecah keranjang jadi deretan harga satuan
       let allPrices: number[] = [];
       cartItems.forEach(item => {
         for (let i = 0; i < item.quantity; i++) { allPrices.push(item.price); }
       });
+      
       // Urutkan dari yang termurah ke termahal
       allPrices.sort((a, b) => a - b);
 
-      // Hitung kelipatan gratisnya
-      const timesPromoApplied = Math.floor(totalItemsInCart / minQty);
-      const totalFreeItems = timesPromoApplied * freeQty;
+      // Hitung kelipatan promo yang didapat (Misal total 6 barang dibagi paket isi 3 = dapat 2x promo)
+      const timesPromoApplied = Math.floor(totalItemsInCart / groupSize);
+      const totalFreeItems = timesPromoApplied * getY;
 
-      // Jumlahkan N barang termurah sebagai nilai diskon
+      // Jumlahkan barang termurah sebagai diskon akhir
       for (let i = 0; i < totalFreeItems; i++) {
         if (allPrices[i]) discountTotal += allPrices[i];
       }
+    }
+  }
+  
+  // C. DISKON NOMINAL (Ditaruh paling bawah sebagai Fallback sistem lama)
+  else if (voucher.type === 'FIXED' || voucher.discount_amount > 0) {
+    if (subtotal >= (voucher.min_purchase || 0)) {
+      discountTotal = voucher.discount_value || voucher.discount_amount;
     }
   }
 
@@ -69,106 +79,80 @@ export default function CheckoutPage() {
   const supabase = createClient();
 
   const [mounted, setMounted] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isAuthChecking, setIsAuthChecking] = useState(true);
-  
-  // Data User & Profil
   const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [isProfileIncomplete, setIsProfileIncomplete] = useState(false);
 
-  // State untuk Integrasi Biteship
-  const [availableCouriers, setAvailableCouriers] = useState<any[]>([]);
-  const [isFetchingRates, setIsFetchingRates] = useState(false);
-  const [selectedCourier, setSelectedCourier] = useState<any>(null);
-  
+  // ==========================================
+  // ZUSTAND HOOKS (WAJIB BERADA DI SINI)
+  // ==========================================
   const items = useCartStore((state) => state.items);
-  const clearCart = useCartStore((state) => state.clearCart);
-  
+  const addItem = useCartStore((state) => state.addItem);
+  const decreaseQuantity = useCartStore((state) => state.decreaseQuantity);
+  const removeItem = useCartStore((state) => state.removeItem);
+
+  // State Form & Pengiriman
+  const [formData, setFormData] = useState({ name: "", phone: "", address: "", postalCode: "" });
+  const [couriers, setCouriers] = useState<any[]>([]);
+  const [selectedCourier, setSelectedCourier] = useState<any>(null);
+  const [isFetchingShipping, setIsFetchingShipping] = useState(false);
+
+  // State Voucher Sultan
   const [myVouchers, setMyVouchers] = useState<any[]>([]);
   const [selectedVoucherId, setSelectedVoucherId] = useState<string>("");
   const [discountAmount, setDiscountAmount] = useState<number>(0);
 
-  const calculatedTotal = items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-  const grandTotal = Math.max(0, calculatedTotal + (selectedCourier?.price || 0) - discountAmount);
-
-  const [formData, setFormData] = useState({ name: "", phone: "", address: "", postalCode: "" });
-
-  // 1. CEK AUTHENTICATION & TARIK PROFIL OTOMATIS
   useEffect(() => {
     setMounted(true);
-    
-    const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        alert("⚠️ Anda harus login dulu untuk bisa Checkout!");
-        router.push("/login");
-        return;
-      }
-      setUser(user);
-
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-
-      if (profileData) {
-        setProfile(profileData);
-        // Otomatis isi form dari database
-        setFormData({
-          name: profileData.full_name || "",
-          phone: profileData.phone || "",
-          address: profileData.address || "",
-          postalCode: profileData.postal_code || "",
-        });
-
-        // Deteksi jika data penting ada yang kosong
-        if (!profileData.full_name || !profileData.phone || !profileData.address || !profileData.postal_code) {
-          setIsProfileIncomplete(true);
-        }
-        // Ambil kupon yang belum terpakai
-        const { data: vouchersData } = await supabase
-          .from("user_vouchers")
-          .select("*, voucher:vouchers(*)")
-          .eq("user_id", user.id)
-          .eq("is_used", false);
-        setMyVouchers(vouchersData || []);
-      }
-      setIsAuthChecking(false);
-    };
-
-    checkAuth();
+    checkAuthAndFetchData();
   }, []);
 
-  // 2. AUTO-FETCH ONGKIR SAAT KODE POS TERISI (DARI PROFIL)
-  useEffect(() => {
-    if (formData.postalCode && formData.postalCode.length === 5) {
-      const getRates = async () => {
-        setIsFetchingRates(true);
-        setAvailableCouriers([]);
-        setSelectedCourier(null);
-        try {
-          const res = await fetch("/api/shipping", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ destinationPostalCode: formData.postalCode })
-          });
-          const data = await res.json();
-          
-          if (res.ok && data.rates && data.rates.length > 0) {
-            setAvailableCouriers(data.rates);
-            setSelectedCourier(data.rates[0]); 
-          }
-        } catch (err) {
-          console.error(err);
-        } finally {
-          setIsFetchingRates(false);
-        }
-      };
-      getRates();
+  const checkAuthAndFetchData = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return router.push("/login");
+    setUser(user);
+
+    // 1. Cek Kelengkapan Profil
+    const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+    if (!profile || !profile.full_name || !profile.phone || !profile.address || !profile.postal_code) {
+      setIsProfileIncomplete(true);
+    } else {
+      setFormData({
+        name: profile.full_name,
+        phone: profile.phone,
+        address: profile.address,
+        postalCode: profile.postal_code,
+      });
+      // Tarik Ongkir Otomatis dari kodepos
+      fetchShippingOptions(profile.postal_code);
     }
-  }, [formData.postalCode]);
+
+    // 2. Tarik Kupon Promo Milik User
+    const { data: vouchersData } = await supabase
+      .from("user_vouchers")
+      .select("*, voucher:vouchers(*)")
+      .eq("user_id", user.id)
+      .eq("is_used", false);
+    setMyVouchers(vouchersData || []);
+  };
+
+  const fetchShippingOptions = async (postalCode: string) => {
+    if (!postalCode || postalCode.length < 5) return;
+    setIsFetchingShipping(true);
+    try {
+      const res = await fetch("/api/shipping", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ destinationPostalCode: postalCode }),
+      });
+      const data = await res.json();
+      if (data.rates) setCouriers(data.rates);
+    } catch (error) { 
+      console.error("Gagal mengambil ongkir", error); 
+    } finally { 
+      setIsFetchingShipping(false); 
+    }
+  };
 
   useEffect(() => {
     if (!selectedVoucherId) {
@@ -181,202 +165,183 @@ export default function CheckoutPage() {
       setDiscountAmount(calculatedDiscount);
     }
   }, [selectedVoucherId, items, myVouchers]);
+  
+  const handleCheckout = async () => {
+    if (!selectedCourier) return alert("Pilih kurir pengiriman terlebih dahulu!");
+    if (items.length === 0) return alert("Keranjang masih kosong!");
 
-  if (!mounted || isAuthChecking) return (
-    <div className="min-h-[70vh] flex items-center justify-center font-black text-2xl uppercase">
-      Memeriksa Akses Keamanan... 🔐
-    </div>
-  );
-
-  if (items.length === 0) {
-    return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-6 p-6 text-center">
-        <h1 className="text-4xl md:text-6xl font-black uppercase tracking-tighter">Keranjang Kosong!</h1>
-        <Link href="/">
-          <button className="px-8 py-4 mt-4 font-black uppercase bg-yellow-400 border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1.5 hover:translate-y-1.5 transition-all">
-            Kembali Belanja
-          </button>
-        </Link>
-      </div>
-    );
-  }
-
-  // JIKA PROFIL BELUM LENGKAP -> BLOKIR CHECKOUT
-  if (isProfileIncomplete) {
-    return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-6 p-6 text-center max-w-2xl mx-auto">
-        <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter text-red-600 bg-yellow-200 border-4 border-black p-4 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
-          TUNGGU DULU BOS! 🛑
-        </h1>
-        <p className="font-bold text-xl">
-          Kami tidak tahu harus mengirim pesanan ini ke mana. Alamat atau Kode Pos Anda belum lengkap!
-        </p>
-        <Link href="/profile">
-          <button className="px-8 py-4 mt-4 font-black uppercase bg-green-400 border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1.5 hover:translate-y-1.5 transition-all text-xl">
-            Lengkapi Profil Sekarang ✍️
-          </button>
-        </Link>
-      </div>
-    );
-  }
-
-  const handleCheckout = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedCourier) return alert("Pilih kurir terlebih dahulu!");
-    
     setIsLoading(true);
-
     try {
-      // Kirim user.id agar order terekam sebagai milik user yang login
-      const response = await fetch("/api/checkout", {
+      const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          formData, 
-          items, 
+        body: JSON.stringify({
+          formData,
+          items,
           total: calculatedTotal,
           courier: `${selectedCourier.company} - ${selectedCourier.type}`,
           shippingCost: selectedCourier.price,
           userId: user.id,
-          userVoucherId: selectedVoucherId || null, // <-- Kirim ID voucher ke backend
-          discountAmount: discountAmount // <-- Kirim nilai diskon ke backend
+          userVoucherId: selectedVoucherId || null,
+          discountAmount: discountAmount
         }),
       });
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Gagal memproses pembayaran");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Gagal membuat transaksi");
 
+      // Tembak Midtrans Snap
       (window as any).snap.pay(data.token, {
         onSuccess: function () {
-          alert("🔥 Pembayaran Berhasil! Cek status pesanan di dashboard.");
-          clearCart();
-          router.push("/"); // Kembali ke halaman utama setelah sukses
+          alert("Pembayaran Berhasil! Pesanan diproses.");
+          router.push("/orders");
         },
-        onPending: function () { alert("⏳ Menunggu pembayaran Anda!"); },
-        onError: function () { alert("❌ Pembayaran Gagal! Coba lagi."); },
-        onClose: function () { alert("⚠️ Popup ditutup sebelum bayar."); }
+        onPending: function () {
+          alert("Menunggu pembayaran...");
+          router.push("/orders");
+        },
+        onError: function () { alert("Pembayaran Gagal!"); },
+        onClose: function () { alert("Kamu menutup pop-up sebelum membayar."); },
       });
-
-    } catch (error: any) {
-      alert(`Error: ${error.message}`);
-    } finally {
-      setIsLoading(false);
+    } catch (error: any) { 
+      alert(`Error: ${error.message}`); 
+    } finally { 
+      setIsLoading(false); 
     }
   };
 
+  if (!mounted) return null;
+
+  // LAYAR 1: JIKA KERANJANG KOSONG
+  if (items.length === 0) {
+    return (
+      <div className="min-h-[70vh] flex flex-col justify-center items-center space-y-6">
+        <h1 className="text-4xl font-black uppercase text-center">Keranjangmu Sepi! 🛒</h1>
+        <p className="font-bold">Ayo temukan Funko POP incaranmu.</p>
+        <Link href="/">
+          <button className="px-6 py-3 bg-yellow-400 font-black uppercase border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all">
+            Mulai Belanja
+          </button>
+        </Link>
+      </div>
+    );
+  }
+
+  // LAYAR 2: JIKA PROFIL BELUM LENGKAP
+  if (isProfileIncomplete) {
+    return (
+      <div className="min-h-[70vh] flex flex-col justify-center items-center space-y-6">
+        <h1 className="text-4xl font-black uppercase text-center">Tunggu Dulu! 🛑</h1>
+        <p className="font-bold text-center max-w-md">Data profil dan kodepos kamu belum lengkap. Lengkapi dulu agar kami bisa menghitung ongkos kirim.</p>
+        <Link href="/profile">
+          <button className="px-6 py-3 bg-green-400 font-black uppercase border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all">
+            Lengkapi Profil
+          </button>
+        </Link>
+      </div>
+    );
+  }
+
+  // KALKULASI HARGA TOTAL
+  const calculatedTotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const grandTotal = Math.max(0, calculatedTotal + (selectedCourier?.price || 0) - discountAmount);
+
+  // LAYAR 3: HALAMAN CHECKOUT UTAMA
   return (
-    <>
+    <div className="p-6 md:p-12 max-w-7xl mx-auto space-y-8">
+      {/* Script Midtrans */}
       <Script src="https://app.sandbox.midtrans.com/snap/snap.js" data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY} strategy="lazyOnload" />
 
-      <div className="p-6 md:p-12 max-w-7xl mx-auto space-y-8">
-        <h1 className="text-4xl md:text-6xl font-black uppercase tracking-tighter border-b-4 border-black pb-4">
-          Checkout
-        </h1>
+      <h1 className="text-4xl md:text-6xl font-black uppercase tracking-tighter border-b-4 border-black pb-6">Checkout Kasir</h1>
 
-        <div className="flex flex-col lg:flex-row gap-12">
-          {/* === KIRI: Form Pengiriman Terkunci === */}
-          <div className="flex-1 space-y-8">
-            <div className="bg-white p-8 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] relative">
-              
-              {/* Tombol Pintasan ke Profil */}
-              <div className="absolute top-6 right-6">
-                <Link href="/profile" className="bg-yellow-400 text-xs font-black uppercase border-2 border-black px-3 py-1 hover:bg-black hover:text-white transition-all">
-                  Ubah Alamat
-                </Link>
-              </div>
-
-              <h2 className="text-2xl font-black uppercase mb-6 bg-blue-300 inline-block px-2 border-2 border-black">
-                Data Pengiriman
-              </h2>
-              
-              <div className="space-y-4 opacity-80 pointer-events-none">
-                <div className="space-y-2">
-                  <label className="font-bold uppercase text-sm">Nama Lengkap</label>
-                  <input type="text" readOnly value={formData.name} className="w-full p-3 border-4 border-black bg-gray-100 font-bold" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="font-bold uppercase text-sm">Nomor WA</label>
-                    <input type="text" readOnly value={formData.phone} className="w-full p-3 border-4 border-black bg-gray-100 font-bold" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="font-bold uppercase text-sm">Kode Pos</label>
-                    <input type="text" readOnly value={formData.postalCode} className="w-full p-3 border-4 border-black bg-gray-100 font-bold" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="font-bold uppercase text-sm">Alamat Lengkap</label>
-                  <textarea rows={3} readOnly value={formData.address} className="w-full p-3 border-4 border-black bg-gray-100 font-bold resize-none" />
-                </div>
-              </div>
-            </div>
-
-            {/* SEKSI PILIH KURIR (DINAMIS DARI BITESHIP CACHE) */}
-            <div className="bg-white p-8 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
-              <h2 className="text-2xl font-black uppercase mb-6 bg-yellow-400 inline-block px-2 border-2 border-black">
-                Pilih Kurir
-              </h2>
-              
-              {isFetchingRates ? (
-                <div className="p-6 border-4 border-black bg-gray-200 text-center font-black uppercase animate-pulse">
-                  Mencari Truk Kurir... 🚚💨
-                </div>
-              ) : availableCouriers.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {availableCouriers.map((courier) => (
-                    <div 
-                      key={`${courier.company}-${courier.type}`}
-                      onClick={() => !isLoading && setSelectedCourier(courier)}
-                      className={`p-4 border-4 border-black cursor-pointer transition-all flex flex-col space-y-2
-                        ${selectedCourier?.type === courier.type && selectedCourier?.company === courier.company
-                          ? "bg-black text-white shadow-none translate-x-1 translate-y-1" 
-                          : "bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-gray-100"
-                        }
-                        ${isLoading && "opacity-50 cursor-not-allowed"}
-                      `}
-                    >
-                      <span className="font-black uppercase">{courier.company} ({courier.type})</span>
-                      <span className="text-sm font-bold opacity-80">
-                        {courier.duration ? `Estimasi: ${courier.duration}` : "Reguler"}
-                      </span>
-                      <span className={`text-lg font-black mt-auto p-1 border-2 ${selectedCourier?.type === courier.type && selectedCourier?.company === courier.company ? "bg-white text-black border-white" : "bg-gray-200 border-black inline-block self-start"}`}>
-                        {formatRupiah(courier.price)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-6 border-4 border-black bg-red-200 text-center font-bold">
-                  Gagal mendapatkan kurir. Cek kembali kodepos Anda.
-                </div>
-              )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
+        
+        {/* ========================================== */}
+        {/* KIRI: ALAMAT & PILIHAN KURIR PENGIRIMAN */}
+        {/* ========================================== */}
+        <div className="space-y-8">
+          
+          <div className="bg-white p-6 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+            <h2 className="text-2xl font-black uppercase mb-6 bg-pink-300 inline-block px-2 border-2 border-black">Alamat Tujuan</h2>
+            <div className="space-y-4 font-bold text-sm">
+              <p className="uppercase text-lg border-b-2 border-black pb-2">{formData.name} <span className="text-gray-500 text-sm">({formData.phone})</span></p>
+              <p className="leading-relaxed">{formData.address}</p>
+              <p className="bg-yellow-200 inline-block px-2 py-1 border-2 border-black">Kodepos: {formData.postalCode}</p>
+              <p className="text-xs text-blue-600 mt-2">*Untuk mengubah alamat, silakan pergi ke halaman Profil.</p>
             </div>
           </div>
 
-          {/* === KANAN: Ringkasan Pesanan === */}
-          <div className="lg:w-1/3 space-y-6">
-            <div className="bg-pink-300 p-8 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] sticky top-24">
-              <h2 className="text-2xl font-black uppercase mb-6 bg-white inline-block px-2 border-2 border-black">
-                Ringkasan
-              </h2>
-
-              <div className="space-y-4 mb-4 border-b-4 border-black pb-4">
-                {items.map((item) => (
-                  <div key={item.id} className="flex justify-between items-center font-bold">
-                    <div className="flex-1">
-                      <p className="uppercase leading-tight">{item.name}</p>
-                      <p className="text-sm">x{item.quantity}</p>
+          <div className="bg-white p-6 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+            <h2 className="text-2xl font-black uppercase mb-6 bg-blue-300 inline-block px-2 border-2 border-black">Opsi Pengiriman</h2>
+            {isFetchingShipping ? (
+              <p className="font-bold animate-pulse uppercase">Menghitung Ongkir... 🚚</p>
+            ) : couriers.length === 0 ? (
+              <p className="font-bold text-red-600">Kurir tidak tersedia ke kodepos tersebut.</p>
+            ) : (
+              <div className="space-y-3">
+                {couriers.map((courier, index) => (
+                  <label key={index} className={`flex justify-between items-center p-4 border-4 border-black cursor-pointer transition-all ${selectedCourier?.company === courier.company && selectedCourier?.type === courier.type ? "bg-yellow-200 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]" : "bg-gray-50 hover:bg-gray-100"}`}>
+                    <div className="flex items-center gap-3">
+                      <input type="radio" name="courier" className="w-5 h-5 accent-black" checked={selectedCourier?.company === courier.company && selectedCourier?.type === courier.type} onChange={() => setSelectedCourier(courier)} />
+                      <div>
+                        <p className="font-black uppercase">{courier.company} - {courier.type}</p>
+                        <p className="text-xs font-bold opacity-70">Estimasi: {courier.estimated_delivery} hari</p>
+                      </div>
                     </div>
-                    <p className="bg-white px-2 border-2 border-black">{formatRupiah(item.price * item.quantity)}</p>
-                  </div>
+                    <span className="font-black text-lg">{formatRupiah(courier.price)}</span>
+                  </label>
                 ))}
               </div>
+            )}
+          </div>
+        </div>
 
-                {/* --- DROPDOWN PILIH KUPON --- */}
-              {myVouchers.length > 0 && (
-                <div className="mb-6 space-y-2 border-b-4 border-black pb-6">
-                  <label className="font-black uppercase text-sm">Pakai Kupon Diskon</label>
-                  <select 
+        {/* ========================================== */}
+        {/* KANAN: RINGKASAN KERANJANG, VOUCHER & TOTAL */}
+        {/* ========================================== */}
+        <div className="space-y-8">
+          
+          {/* DAFTAR BARANG (DENGAN TOMBOL PLUS MINUS) */}
+          <div className="bg-white border-4 border-black p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+            <h2 className="text-xl font-black uppercase mb-4 bg-yellow-300 inline-block px-2 border-2 border-black">
+              Isi Keranjang ({items.reduce((acc, item) => acc + item.quantity, 0)})
+            </h2>
+            
+            <div className="space-y-4">
+              {items.map((item) => (
+                <div key={item.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-gray-50 border-2 border-black p-3 gap-4">
+                  
+                  {/* Info Barang */}
+                  <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <div className="w-16 h-16 bg-white border-2 border-black shrink-0 flex items-center justify-center">
+                      <img src={item.image_url} alt={item.name} className="max-w-full max-h-full object-contain mix-blend-darken" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-black uppercase leading-tight text-xs sm:text-sm line-clamp-2">{item.name}</p>
+                      <p className="text-xs font-bold text-gray-500 mt-1">{formatRupiah(item.price)}</p>
+                    </div>
+                  </div>
+
+                  {/* Kontrol + / - / Hapus */}
+                  <div className="flex items-center gap-1 self-end sm:self-auto bg-white border-2 border-black">
+                    <button onClick={() => decreaseQuantity(item.id)} className="w-8 h-8 flex items-center justify-center font-black bg-gray-100 hover:bg-red-400 hover:text-white transition-colors">-</button>
+                    <span className="w-8 text-center font-black text-sm">{item.quantity}</span>
+                    <button onClick={() => addItem(item)} disabled={item.quantity >= item.stock} className={`w-8 h-8 flex items-center justify-center font-black transition-colors ${item.quantity >= item.stock ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gray-100 hover:bg-green-400 hover:text-white'}`}>+</button>
+                    <button onClick={() => removeItem(item.id)} className="w-8 h-8 flex items-center justify-center font-black border-l-2 border-black bg-red-100 hover:bg-red-600 hover:text-white transition-colors text-xs">🗑️</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white p-6 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+            <h2 className="text-2xl font-black uppercase mb-6 bg-green-400 inline-block px-2 border-2 border-black">Ringkasan</h2>
+            
+            {/* DROPDOWN KUPON PROMO */}
+            {myVouchers.length > 0 && (
+              <div className="mb-6 space-y-2 border-b-4 border-black pb-6">
+                <label className="font-black uppercase text-sm">Pakai Kupon Diskon</label>
+                <select 
                   value={selectedVoucherId}
                   onChange={(e) => setSelectedVoucherId(e.target.value)} // Cukup set ID saja, useEffect akan menghitung nominalnya
                   className="w-full p-3 border-4 border-black font-bold focus:bg-yellow-200 focus:outline-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
@@ -398,52 +363,42 @@ export default function CheckoutPage() {
                     )
                   })}
                 </select>
+              </div>
+            )}
+
+            {/* RINCIAN BIAYA */}
+            <div className="space-y-2 mb-6 border-b-4 border-black pb-6 font-bold text-sm">
+              <div className="flex justify-between"><span>Subtotal Barang</span><span>{formatRupiah(calculatedTotal)}</span></div>
+              <div className="flex justify-between items-center">
+                <span>Ongkos Kirim</span>
+                <span className={!selectedCourier ? "text-red-500" : ""}>{selectedCourier ? formatRupiah(selectedCourier.price) : "Pilih kurir"}</span>
+              </div>
+              {discountAmount > 0 && (
+                <div className="flex justify-between items-center text-red-600 font-black text-base mt-2">
+                  <span>Diskon Kupon</span><span>- {formatRupiah(discountAmount)}</span>
                 </div>
               )}
-
-              {/* Rincian Harga dengan Potongan Diskon */}
-              <div className="space-y-2 mb-6 border-b-4 border-black pb-6 font-bold text-sm">
-                <div className="flex justify-between">
-                  <span>Subtotal Barang</span>
-                  <span>{formatRupiah(calculatedTotal)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span>Ongkos Kirim</span>
-                  <span className={!selectedCourier ? "text-red-500" : ""}>
-                    {selectedCourier ? formatRupiah(selectedCourier.price) : "Pilih kurir"}
-                  </span>
-                </div>
-                {/* Tampilkan baris diskon merah jika ada */}
-                {discountAmount > 0 && (
-                  <div className="flex justify-between items-center text-red-600 font-black text-base mt-2">
-                    <span>Diskon Kupon</span>
-                    <span>- {formatRupiah(discountAmount)}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex justify-between items-end mb-8">
-                <span className="font-black uppercase text-xl">Total</span>
-                <span className="font-black text-2xl bg-white px-2 py-1 border-4 border-black transform rotate-2">
-                  {formatRupiah(grandTotal)}
-                </span>
-              </div>
-
-              <button 
-                onClick={handleCheckout}
-                disabled={isLoading || !selectedCourier}
-                className={`w-full py-4 text-xl font-black uppercase border-4 border-black transition-all ${
-                  isLoading || !selectedCourier
-                  ? "bg-gray-400 opacity-70 translate-x-1.5 translate-y-1.5 shadow-none cursor-not-allowed" 
-                  : "bg-green-400 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1.5 hover:translate-y-1.5"
-                }`}
-              >
-                {!selectedCourier ? "Pilih Kurir Dulu" : isLoading ? "Memproses..." : "Bayar Sekarang"}
-              </button>
             </div>
+
+            {/* TOTAL & TOMBOL BAYAR */}
+            <div className="flex justify-between items-end mb-8">
+              <span className="font-black uppercase text-xl">Total</span>
+              <span className="font-black text-2xl bg-white px-2 py-1 border-4 border-black transform rotate-2 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                {formatRupiah(grandTotal)}
+              </span>
+            </div>
+
+            <button 
+              onClick={handleCheckout}
+              disabled={isLoading || !selectedCourier}
+              className={`w-full py-4 text-xl font-black uppercase border-4 border-black transition-all ${isLoading || !selectedCourier ? "bg-gray-400 opacity-70 translate-x-1 translate-y-1 shadow-none cursor-not-allowed" : "bg-green-400 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1"}`}
+            >
+              {!selectedCourier ? "Pilih Kurir Dulu" : isLoading ? "Memproses..." : "Bayar Sekarang"}
+            </button>
           </div>
+
         </div>
       </div>
-    </>
+    </div>
   );
 }

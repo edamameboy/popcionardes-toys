@@ -1,48 +1,72 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { Product } from '@/types';
+import { persist } from 'zustand/middleware'; // <-- JURUS RAHASIA: Import middleware persist
 
-export interface CartItem extends Product {
+export type CartItem = {
+  id: string;
+  name: string;
+  price: number;
   quantity: number;
-}
+  stock: number;
+  image_url?: string;
+};
 
-interface CartStore {
+interface CartState {
   items: CartItem[];
-  addItem: (product: Product) => void;
-  removeItem: (productId: string) => void;
+  addItem: (item: CartItem) => void;
+  decreaseQuantity: (id: string) => void;
+  removeItem: (id: string) => void;
   clearCart: () => void;
 }
 
-export const useCartStore = create<CartStore>()(
+// Tambahkan kurung kosong () sebelum (persist...) karena ini aturan TypeScript untuk Zustand
+export const useCartStore = create<CartState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       items: [],
       
-      addItem: (product) => {
-        const currentItems = get().items;
-        const existingItem = currentItems.find((item) => item.id === product.id);
-
+      // TAMBAH BARANG
+      addItem: (item) => set((state) => {
+        const existingItem = state.items.find((i) => i.id === item.id);
         if (existingItem) {
-          set({
-            items: currentItems.map((item) =>
-              item.id === product.id
-                ? { ...item, quantity: item.quantity + 1 }
-                : item
+          // Cegah penambahan jika melebihi stok
+          if (existingItem.quantity >= existingItem.stock) return state;
+          return {
+            items: state.items.map((i) =>
+              i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i
             ),
-          });
-        } else {
-          set({ items: [...currentItems, { ...product, quantity: 1 }] });
+          };
         }
-      },
+        return { items: [...state.items, { ...item, quantity: 1 }] };
+      }),
 
-      removeItem: (productId) => {
-        set({ items: get().items.filter((item) => item.id !== productId) });
-      },
+      // KURANGI BARANG
+      decreaseQuantity: (id) => set((state) => {
+        const existingItem = state.items.find((i) => i.id === id);
+        if (!existingItem) return state;
 
+        // Jika jumlahnya 1 lalu dikurangi, maka hapus barang dari keranjang
+        if (existingItem.quantity === 1) {
+          return { items: state.items.filter((i) => i.id !== id) };
+        }
+
+        // Jika lebih dari 1, kurangi jumlahnya saja
+        return {
+          items: state.items.map((i) =>
+            i.id === id ? { ...i, quantity: i.quantity - 1 } : i
+          ),
+        };
+      }),
+
+      // HAPUS BARANG (Tong Sampah)
+      removeItem: (id) => set((state) => ({
+        items: state.items.filter((i) => i.id !== id)
+      })),
+
+      // KOSONGKAN KERANJANG
       clearCart: () => set({ items: [] }),
     }),
     {
-      name: 'popcionardes-cart', 
+      name: 'popcionardes-cart-storage', // <-- NAMA BRANKAS: Semua data disimpan ke kunci ini di localStorage
     }
   )
 );

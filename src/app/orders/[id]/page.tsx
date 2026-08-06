@@ -22,6 +22,7 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false); // <--- State baru untuk mendeteksi Admin
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -61,6 +62,32 @@ export default function OrderDetailPage() {
     }
   };
 
+  const handleSyncPayment = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await fetch("/api/orders/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_id: order.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.status !== order.status) {
+          alert(`Status pesanan diperbarui menjadi: ${data.status}`);
+          fetchOrderDetail();
+        } else {
+          alert("Status belum berubah di Midtrans.");
+        }
+      } else {
+        alert(`Gagal sinkronisasi: ${data.error || data.message}`);
+      }
+    } catch (error: any) {
+      alert(`Error: ${error.message}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   if (!mounted || isLoading) return <div className="min-h-screen flex justify-center items-center font-black text-2xl uppercase">Melacak Paket... 🛰️</div>;
   if (!order) return <div className="min-h-screen flex justify-center items-center font-black text-2xl uppercase text-red-500">Pesanan Tidak Ditemukan! ❌</div>;
 
@@ -87,14 +114,25 @@ export default function OrderDetailPage() {
             Dibuat pada: {new Date(order.created_at).toLocaleString("id-ID", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}
           </p>
         </div>
-        <span className={`text-sm font-black uppercase tracking-wider px-4 py-2 border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]
-          ${order.status === "paid" && "bg-green-400"}
-          ${order.status === "shipped" && "bg-blue-400 text-white"}
-          ${order.status === "pending" && "bg-amber-300"}
-          ${order.status === "cancelled" && "bg-red-400 text-white"}
-        `}>
-          {order.status === "shipped" ? "🚚 DIKIRIM" : order.status === "paid" ? "✅ LUNAS" : order.status === "pending" ? "⏳ MENUNGGU BAYAR" : "❌ BATAL"}
-        </span>
+        <div className="flex flex-col items-end gap-2">
+          <span className={`text-sm font-black uppercase tracking-wider px-4 py-2 border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]
+            ${order.status === "paid" && "bg-green-400"}
+            ${order.status === "shipped" && "bg-blue-400 text-white"}
+            ${order.status === "pending" && "bg-amber-300"}
+            ${order.status === "cancelled" && "bg-red-400 text-white"}
+          `}>
+            {order.status === "shipped" ? "🚚 DIKIRIM" : order.status === "paid" ? "✅ LUNAS" : order.status === "pending" ? "⏳ MENUNGGU BAYAR" : "❌ BATAL"}
+          </span>
+          {order.status === "pending" && (
+            <button 
+              onClick={handleSyncPayment}
+              disabled={isSyncing}
+              className="text-xs font-black bg-blue-300 hover:bg-blue-400 border-2 border-black px-3 py-1 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all"
+            >
+              {isSyncing ? "Mengecek..." : "🔄 Cek Pembayaran"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
