@@ -121,10 +121,12 @@ export default function OrdersPage() {
                   {/* BADGE STATUS DINAMIS PENUH WARNA */}
                   <span className={`text-sm font-black uppercase tracking-wider px-3 py-1.5 border-4 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]
                     ${order.status === "paid" && "bg-green-400"}
+                    ${order.status === "processing" && "bg-yellow-400"}
+                    ${order.status === "shipped" && "bg-blue-400 text-white"}
                     ${order.status === "pending" && "bg-amber-300"}
                     ${order.status === "cancelled" && "bg-red-400"}
                   `}>
-                    {order.status === "paid" ? "✅ SUKSES" : order.status === "pending" ? "⏳ BELUM BAYAR" : "❌ BATAL"}
+                    {order.status === "paid" ? "✅ SUKSES" : order.status === "processing" ? "📦 DIPROSES" : order.status === "shipped" ? "🚀 DIKIRIM" : order.status === "pending" ? "⏳ BELUM BAYAR" : "❌ BATAL"}
                   </span>
                 </div>
               </div>

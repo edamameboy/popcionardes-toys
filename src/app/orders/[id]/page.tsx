@@ -155,12 +155,13 @@ export default function OrderDetailPage() {
         <div className="flex flex-col items-end gap-2">
           <span className={`text-sm font-black uppercase tracking-wider px-4 py-2 border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]
             ${order.status === "paid" && "bg-green-400"}
+            ${order.status === "processing" && "bg-yellow-400"}
             ${order.status === "shipped" && "bg-blue-400 text-white"}
             ${order.status === "completed" && "bg-emerald-500 text-white"}
             ${order.status === "pending" && "bg-amber-300"}
             ${order.status === "cancelled" && "bg-red-400 text-white"}
           `}>
-            {order.status === "shipped" ? "🚚 DIKIRIM" : order.status === "paid" ? "✅ LUNAS" : order.status === "completed" ? "🏁 SELESAI" : order.status === "pending" ? "⏳ MENUNGGU BAYAR" : "❌ BATAL"}
+            {order.status === "shipped" ? "🚀 DIKIRIM" : order.status === "processing" ? "📦 DIPROSES" : order.status === "paid" ? "✅ LUNAS" : order.status === "completed" ? "🏁 SELESAI" : order.status === "pending" ? "⏳ MENUNGGU BAYAR" : "❌ BATAL"}
           </span>
           {order.status === "pending" && (
             <button
