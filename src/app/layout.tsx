@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import NavbarCart from "../components/Navbar";
+import FloatingWhatsApp from "@/components/FloatingWhatsApp";
 
 // Menggunakan font sans-serif yang tebal untuk kesan brutalist
 const inter = Inter({ subsets: ["latin"], weight: ["400", "700", "900"] });
@@ -47,6 +48,8 @@ export default function RootLayout({
           {children}
         </main>
 
+        <FloatingWhatsApp />
+
         {/* Footer Neo Brutalism */}
         <footer className="bg-black text-white border-t-8 border-black font-bold uppercase mt-20">
           <div className="max-w-6xl mx-auto p-8 md:p-12 grid grid-cols-1 md:grid-cols-4 gap-8 md:gap-4">
@@ -58,8 +61,8 @@ export default function RootLayout({
                 Markas besar Funko POP! terlengkap di Indonesia. Temukan ribuan karakter favoritmu di sini.
               </p>
               <div className="flex gap-4 pt-2">
-                <a href="#" className="w-10 h-10 bg-white text-black flex items-center justify-center border-2 border-white hover:bg-yellow-400 hover:-translate-y-1 transition-transform">IG</a>
-                <a href="#" className="w-10 h-10 bg-white text-black flex items-center justify-center border-2 border-white hover:bg-yellow-400 hover:-translate-y-1 transition-transform">TK</a>
+                <a href="https://www.instagram.com/popcionardes_funko/" target="_blank" rel="noopener noreferrer" className="w-10 h-10 bg-white text-black flex items-center justify-center border-2 border-white hover:bg-yellow-400 hover:-translate-y-1 transition-transform">IG</a>
+                <a href="https://www.tiktok.com/@popcionardestoys" target="_blank" rel="noopener noreferrer" className="w-10 h-10 bg-white text-black flex items-center justify-center border-2 border-white hover:bg-yellow-400 hover:-translate-y-1 transition-transform">TK</a>
                 <a href="#" className="w-10 h-10 bg-white text-black flex items-center justify-center border-2 border-white hover:bg-yellow-400 hover:-translate-y-1 transition-transform">X</a>
               </div>
             </div>
@@ -92,15 +95,15 @@ export default function RootLayout({
               <ul className="space-y-2 text-sm normal-case">
                 <li className="flex gap-2 items-start">
                   <span>📍</span>
-                  <span>Jakarta, Indonesia</span>
+                  <span>Kelapa Gading, Jakarta Utara</span>
                 </li>
                 <li className="flex gap-2 items-center">
                   <span>📞</span>
-                  <span>0812-3456-7890</span>
+                  <span>+62-851-6186-8288</span>
                 </li>
                 <li className="flex gap-2 items-center">
                   <span>✉️</span>
-                  <span>halo@popcionardes.com</span>
+                  <span>support@popcionardestoys.com</span>
                 </li>
               </ul>
             </div>

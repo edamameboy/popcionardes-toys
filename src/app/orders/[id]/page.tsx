@@ -5,13 +5,7 @@ import { createClient } from "@/utils/supabase/client";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
-const formatRupiah = (angka: number) => {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-  }).format(angka);
-};
+import { formatRupiah } from "@/utils/formatters";
 
 export default function OrderDetailPage() {
   const params = useParams();

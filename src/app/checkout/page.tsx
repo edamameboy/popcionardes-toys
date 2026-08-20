@@ -7,13 +7,7 @@ import Script from "next/script";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 
-const formatRupiah = (angka: number) => {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-  }).format(angka);
-};
+import { formatRupiah } from "@/utils/formatters";
 
 const calculateVoucherDiscount = (cartItems: any[], voucher: any) => {
   if (!voucher) return 0;

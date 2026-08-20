@@ -73,11 +73,14 @@ export default function Navbar() {
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const params = new URLSearchParams();
-    if (searchCategory !== "Semua") params.append("category", searchCategory);
     if (searchQuery.trim() !== "") params.append("search", searchQuery.trim());
     
-    // Melempar user ke halaman utama (Homepage) beserta filter URL-nya
-    router.push(`/?${params.toString()}`);
+    // Melempar user ke halaman utama atau halaman kategori yang sesuai
+    if (searchCategory !== "Semua") {
+      router.push(`/kategori/${searchCategory.toLowerCase()}?${params.toString()}`);
+    } else {
+      router.push(`/?${params.toString()}`);
+    }
   };
 
   if (!mounted) return null;
@@ -86,8 +89,10 @@ export default function Navbar() {
     <nav className="w-full bg-white border-b-4 border-black p-2 md:p-4 flex flex-wrap md:flex-nowrap items-center justify-between gap-3 md:gap-4 sticky top-0 z-50">
       
       {/* === KIRI: LOGO === */}
-      <Link href="/" className="block hover:skew-x-2 transition-transform select-none active:translate-x-0.5 active:translate-y-0.5 shrink-0 order-1">
-        <img src="/logo.png" alt="Popcionardes Toys Logo" className="h-10 md:h-12 w-auto object-contain" />
+      <Link href="/" className="block hover:-translate-y-1 transition-transform select-none shrink-0 order-1">
+        <h1 className="font-black text-xl md:text-2xl uppercase tracking-tighter bg-yellow-300 px-2 py-1 border-2 md:border-4 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] md:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transform -rotate-2">
+          POPCIONARDES
+        </h1>
       </Link>
 
       {/* === TENGAH: MESIN PENCARIAN (SEARCH BAR) NEO BRUTALISM === */}

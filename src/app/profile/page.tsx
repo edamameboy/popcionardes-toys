@@ -10,13 +10,7 @@ const MapPicker = dynamic(() => import('@/components/MapPicker'), {
   loading: () => <div className="h-72 w-full bg-gray-200 border-4 border-black flex items-center justify-center font-black uppercase mt-4">Memuat Peta... 🌍</div>
 });
 
-const formatRupiah = (angka: number) => {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-  }).format(angka);
-};
+import { formatRupiah } from "@/utils/formatters";
 
 export default function ProfilePage() {
   const [mounted, setMounted] = useState(false);
