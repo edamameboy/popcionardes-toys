@@ -33,7 +33,7 @@ export default function OrderDetailPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return router.push("/login");
 
-      const { data: profileData } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+      const { data: profileData } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
       const userIsAdmin = profileData?.role === "admin";
       setIsAdmin(userIsAdmin);
 

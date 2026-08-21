@@ -62,6 +62,11 @@ export default function LoginPage() {
               className="w-full p-3 border-4 border-black bg-white focus:bg-yellow-200 focus:outline-none focus:shadow-none focus:translate-x-1 focus:translate-y-1 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all font-bold"
               placeholder="Rahasia123"
             />
+            <div className="text-right mt-1">
+              <Link href="/reset-password" className="text-sm font-bold underline hover:bg-black hover:text-white transition-all px-1">
+                Lupa Password?
+              </Link>
+            </div>
           </div>
 
           <button 

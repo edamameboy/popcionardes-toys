@@ -81,14 +81,35 @@ function NewArrivals() {
 }
 
 // ==========================================
-// KOMPONEN UTAMA (HALAMAN BERANDA)
+// HERO CAROUSEL DINAMIS
 // ==========================================
-export default function HomePage() {
-  return (
-    <div className="pb-20">
-      
-      {/* 1. HERO BANNER */}
-      <div className="bg-pink-300 border-b-4 border-black p-6 md:p-12 shadow-[0px_8px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden min-h-[70vh] flex items-center mb-8">
+function HeroCarousel() {
+  const [banners, setBanners] = useState<any[]>([]);
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const supabase = createClient();
+
+  useEffect(() => {
+    const fetchBanners = async () => {
+      const { data } = await supabase.from("banners").select("*").eq("is_active", true).order("sort_order", { ascending: true });
+      if (data && data.length > 0) {
+        setBanners(data);
+      }
+    };
+    fetchBanners();
+  }, [supabase]);
+
+  useEffect(() => {
+    if (banners.length <= 1) return;
+    const interval = setInterval(() => {
+      setCurrentIdx((prev) => (prev + 1) % banners.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [banners.length]);
+
+  if (banners.length === 0) {
+    // Fallback jika belum ada banner di database
+    return (
+      <div className="bg-pink-300 border-b-4 border-black p-6 md:p-12 shadow-[0px_8px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden min-h-[50vh] md:min-h-[70vh] flex items-center mb-8">
         <div className="max-w-6xl mx-auto w-full flex flex-col md:flex-row items-center relative z-20">
           <div className="md:w-1/2 space-y-6 animate-slide-in">
             <div className="space-y-2">
@@ -120,7 +141,6 @@ export default function HomePage() {
               className="relative z-10 w-56 md:w-96 h-auto object-contain transform -rotate-3 drop-shadow-[12px_12px_0px_rgba(0,0,0,0.8)] hover:scale-105 transition-transform duration-300"
             />
             
-            {/* Promo Badge Floating */}
             <div className="absolute -top-4 right-0 md:top-10 md:right-10 z-20 bg-yellow-400 border-4 border-black p-3 md:p-4 rounded-full w-24 h-24 md:w-32 md:h-32 flex items-center justify-center text-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transform rotate-12 animate-bounce">
               <span className="font-black uppercase text-[10px] md:text-sm leading-tight">
                 Gratis Ongkir<br/>&gt;500RB!
@@ -129,6 +149,70 @@ export default function HomePage() {
           </div>
         </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="relative w-full border-b-4 border-black shadow-[0px_8px_0px_0px_rgba(0,0,0,1)] overflow-hidden mb-8 group bg-gray-100 aspect-[21/9] md:min-h-[500px]">
+      <div 
+        className="flex transition-transform duration-500 ease-in-out h-full"
+        style={{ transform: `translateX(-${currentIdx * 100}%)` }}
+      >
+        {banners.map((banner) => (
+          <div 
+            key={banner.id} 
+            className={`min-w-full h-full flex-shrink-0 ${banner.link_url ? 'cursor-pointer' : ''}`} 
+            onClick={() => {
+              if (banner.link_url) {
+                // If it's an internal link, router.push is better, but window.location.href is robust for both
+                window.location.href = banner.link_url;
+              }
+            }}
+          >
+            <img src={banner.image_url} alt="Hero Banner" className="w-full h-full object-cover" />
+          </div>
+        ))}
+      </div>
+
+      {banners.length > 1 && (
+        <>
+          <button 
+            onClick={() => setCurrentIdx(prev => prev === 0 ? banners.length - 1 : prev - 1)}
+            className="absolute top-1/2 left-4 -translate-y-1/2 bg-white border-4 border-black font-black text-2xl w-12 h-12 flex items-center justify-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-yellow-300 z-10"
+          >
+            ←
+          </button>
+          <button 
+            onClick={() => setCurrentIdx(prev => (prev + 1) % banners.length)}
+            className="absolute top-1/2 right-4 -translate-y-1/2 bg-white border-4 border-black font-black text-2xl w-12 h-12 flex items-center justify-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-yellow-300 z-10"
+          >
+            →
+          </button>
+
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-10">
+            {banners.map((_, idx) => (
+              <button 
+                key={idx}
+                onClick={() => setCurrentIdx(idx)}
+                className={`w-4 h-4 border-2 border-black transition-all ${idx === currentIdx ? 'bg-black scale-125' : 'bg-white hover:bg-gray-200'}`}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+// KOMPONEN UTAMA (HALAMAN BERANDA)
+// ==========================================
+export default function HomePage() {
+  return (
+    <div className="pb-20">
+      
+      {/* 1. HERO BANNER CAROUSEL */}
+      <HeroCarousel />
 
       {/* 2. PROMO TICKER BAR (Dipindah ke layout) */}
       <div className="max-w-6xl mx-auto px-4 md:px-8 space-y-16 md:space-y-20 pt-8">

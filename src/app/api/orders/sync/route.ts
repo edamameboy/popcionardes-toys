@@ -63,24 +63,37 @@ export async function POST(request: Request) {
       // A. Ambil data pesanan
       const { data: orderData } = await supabaseAdmin
         .from('orders')
-        .select('user_id, total_amount, user_voucher_id')
+        .select('user_id, total_amount, user_voucher_id, items_data')
         .eq('id', order_id)
         .single();
 
-      if (orderData && orderData.user_id) {
-        // B. Injeksi Poin Otomatis
-        const earnedPoints = Math.floor(orderData.total_amount / 1000);
-        const { data: profileData } = await supabaseAdmin.from('profiles').select('points').eq('id', orderData.user_id).single();
-        const newTotalPoints = (profileData?.points || 0) + earnedPoints;
-        
-        await supabaseAdmin.from('profiles').update({ points: newTotalPoints }).eq('id', orderData.user_id);
+      if (orderData) {
+        // B. Kurangi Stok Produk (Deduct Stock)
+        if (orderData.items_data && Array.isArray(orderData.items_data)) {
+          for (const item of orderData.items_data) {
+            const { data: prod } = await supabaseAdmin.from('products').select('stock').eq('id', item.id).single();
+            if (prod) {
+              const newStock = Math.max(0, prod.stock - item.quantity);
+              await supabaseAdmin.from('products').update({ stock: newStock }).eq('id', item.id);
+            }
+          }
+        }
 
-        // C. Bakar voucher
-        if (orderData.user_voucher_id) {
-          await supabaseAdmin
-            .from('user_vouchers')
-            .update({ is_used: true })
-            .eq('id', orderData.user_voucher_id);
+        if (orderData.user_id) {
+          // C. Injeksi Poin Otomatis
+          const earnedPoints = Math.floor(orderData.total_amount / 1000);
+          const { data: profileData } = await supabaseAdmin.from('profiles').select('points').eq('id', orderData.user_id).single();
+          const newTotalPoints = (profileData?.points || 0) + earnedPoints;
+          
+          await supabaseAdmin.from('profiles').update({ points: newTotalPoints }).eq('id', orderData.user_id);
+
+          // D. Bakar voucher
+          if (orderData.user_voucher_id) {
+            await supabaseAdmin
+              .from('user_vouchers')
+              .update({ is_used: true })
+              .eq('id', orderData.user_voucher_id);
+          }
         }
       }
       return NextResponse.json({ message: "Synced successfully", status: "paid" }, { status: 200 });

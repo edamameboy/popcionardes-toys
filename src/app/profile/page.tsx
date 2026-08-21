@@ -45,7 +45,7 @@ export default function ProfilePage() {
       setUser(user);
 
       // 1. Profil & Poin
-      const { data: profileData } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+      const { data: profileData } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
       if (profileData) {
         setFormData({
           username: profileData.username || "", full_name: profileData.full_name || "", phone: profileData.phone || "",
@@ -126,7 +126,7 @@ export default function ProfilePage() {
     e.preventDefault();
     setIsSaving(true);
     try {
-      await supabase.from("profiles").update({ ...formData }).eq("id", user.id);
+      await supabase.from("profiles").upsert({ id: user.id, ...formData });
       alert("🔥 Profil Berhasil Disimpan!");
       window.location.reload(); 
     } catch (error: any) { alert(`Gagal menyimpan: ${error.message}`); } finally { setIsSaving(false); }

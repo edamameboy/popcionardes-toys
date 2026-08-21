@@ -123,7 +123,7 @@ export default function CheckoutPage() {
     setUser(user);
 
     // 1. Cek Kelengkapan Profil
-    const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+    const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
     if (!profile || !profile.full_name || !profile.phone || !profile.address || !profile.postal_code) {
       setIsProfileIncomplete(true);
     } else {

@@ -27,39 +27,54 @@ export async function POST(request: Request) {
 
     if (transaction_status === 'settlement' || transaction_status === 'capture') {
       
-      // Update status pesanan
-      await supabaseAdmin
-        .from('orders')
-        .update({ status: 'paid', midtrans_transaction_id: transaction_id })
-        .eq('id', order_id);
-
       // A. Ambil data pesanan
       const { data: orderData } = await supabaseAdmin
         .from('orders')
-        .select('user_id, total_amount, user_voucher_id')
+        .select('user_id, total_amount, user_voucher_id, status, items_data')
         .eq('id', order_id)
         .single();
 
-      if (orderData && orderData.user_id) {
-        // B. Injeksi Poin Otomatis
-        const earnedPoints = Math.floor(orderData.total_amount / 1000);
-        const { data: profileData } = await supabaseAdmin.from('profiles').select('points').eq('id', orderData.user_id).single();
-        const newTotalPoints = (profileData?.points || 0) + earnedPoints;
+      if (orderData && orderData.status !== 'paid' && orderData.status !== 'shipped' && orderData.status !== 'completed') {
         
-        await supabaseAdmin.from('profiles').update({ points: newTotalPoints }).eq('id', orderData.user_id);
-        console.log(`🎁 SUKSES! User ${orderData.user_id} mendapat ${earnedPoints} Poin.`);
+        // Update status pesanan
+        await supabaseAdmin
+          .from('orders')
+          .update({ status: 'paid', midtrans_transaction_id: transaction_id })
+          .eq('id', order_id);
 
-        // C. JURUS PEMBAKAR VOUCHER (Pasti Tembus karena pakai Admin)
-        if (orderData.user_voucher_id) {
-          const { error: voucherError } = await supabaseAdmin
-            .from('user_vouchers')
-            .update({ is_used: true })
-            .eq('id', orderData.user_voucher_id);
-            
-          if (voucherError) {
-             console.error(`❌ Gagal membakar voucher:`, voucherError);
-          } else {
-             console.log(`🎟️ Voucher ID ${orderData.user_voucher_id} resmi dihanguskan!`);
+        // B. Kurangi Stok Produk (Deduct Stock)
+        if (orderData.items_data && Array.isArray(orderData.items_data)) {
+          for (const item of orderData.items_data) {
+            // Ambil stock terbaru lalu kurangi
+            const { data: prod } = await supabaseAdmin.from('products').select('stock').eq('id', item.id).single();
+            if (prod) {
+              const newStock = Math.max(0, prod.stock - item.quantity);
+              await supabaseAdmin.from('products').update({ stock: newStock }).eq('id', item.id);
+            }
+          }
+        }
+
+        if (orderData.user_id) {
+          // C. Injeksi Poin Otomatis
+          const earnedPoints = Math.floor(orderData.total_amount / 1000);
+          const { data: profileData } = await supabaseAdmin.from('profiles').select('points').eq('id', orderData.user_id).single();
+          const newTotalPoints = (profileData?.points || 0) + earnedPoints;
+          
+          await supabaseAdmin.from('profiles').update({ points: newTotalPoints }).eq('id', orderData.user_id);
+          console.log(`🎁 SUKSES! User ${orderData.user_id} mendapat ${earnedPoints} Poin.`);
+
+          // D. JURUS PEMBAKAR VOUCHER
+          if (orderData.user_voucher_id) {
+            const { error: voucherError } = await supabaseAdmin
+              .from('user_vouchers')
+              .update({ is_used: true })
+              .eq('id', orderData.user_voucher_id);
+              
+            if (voucherError) {
+               console.error(`❌ Gagal membakar voucher:`, voucherError);
+            } else {
+               console.log(`🎟️ Voucher ID ${orderData.user_voucher_id} resmi dihanguskan!`);
+            }
           }
         }
       }

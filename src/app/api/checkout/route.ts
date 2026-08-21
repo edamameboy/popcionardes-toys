@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     const productIds = items.map((item: any) => item.id);
     
     const [productsRes, voucherRes, shippingRes] = await Promise.all([
-      supabase.from("products").select("id, name, price").in("id", productIds),
+      supabase.from("products").select("id, name, price, stock").in("id", productIds),
       userVoucherId ? supabase.from("user_vouchers").select("*, voucher:vouchers(*)").eq("id", userVoucherId).single() : Promise.resolve({ data: null }),
       supabase.from("shipping_cache").select("*").eq("postal_code", formData.postalCode).single()
     ]);
@@ -40,6 +40,11 @@ export async function POST(request: Request) {
       
       const truePrice = dbProduct.price;
       const qty = clientItem.quantity || 1;
+
+      if (dbProduct.stock < qty) {
+        throw new Error(`Stok tidak cukup untuk produk: ${clientItem.name}. Sisa stok: ${dbProduct.stock}`);
+      }
+
       trueSubtotal += (truePrice * qty);
       
       return {

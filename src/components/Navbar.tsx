@@ -86,7 +86,7 @@ export default function Navbar() {
   if (!mounted) return null;
 
   return (
-    <nav className="w-full bg-white border-b-4 border-black p-2 md:p-4 flex flex-wrap md:flex-nowrap items-center justify-between gap-3 md:gap-4 sticky top-0 z-50">
+    <nav className="w-full bg-white border-b-4 border-black p-2 md:p-4 flex flex-wrap lg:flex-nowrap items-center justify-between gap-3 md:gap-4 sticky top-0 z-50">
       
       {/* === KIRI: LOGO === */}
       <Link href="/" className="block hover:-translate-y-1 transition-transform select-none shrink-0 order-1">
@@ -96,7 +96,7 @@ export default function Navbar() {
       </Link>
 
       {/* === TENGAH: MESIN PENCARIAN (SEARCH BAR) NEO BRUTALISM === */}
-      <form onSubmit={handleSearchSubmit} className="order-3 md:order-2 flex w-full md:flex-1 max-w-3xl border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-white h-10 md:h-12 transition-all focus-within:shadow-none focus-within:translate-x-1 focus-within:translate-y-1 mx-auto">
+      <form onSubmit={handleSearchSubmit} className="order-3 lg:order-2 flex w-full lg:flex-1 max-w-3xl border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-white h-10 md:h-12 transition-all focus-within:shadow-none focus-within:translate-x-1 focus-within:translate-y-1 mx-auto mt-1 lg:mt-0">
         
         {/* Dropdown Kategori */}
         <select 
@@ -133,7 +133,7 @@ export default function Navbar() {
       </form>
 
       {/* === KANAN: MENU USER & KERANJANG === */}
-      <div className="flex items-center gap-2 md:gap-4 justify-end shrink-0 order-2 md:order-3">
+      <div className="flex items-center gap-2 md:gap-4 justify-end shrink-0 order-2 lg:order-3">
         {user ? (
           <div className="flex items-center h-10 md:h-12 bg-yellow-200 border-2 md:border-4 border-black pl-2 pr-2 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] md:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] font-bold transition-all">
             <Link href="/profile" className="flex items-center gap-2 hover:opacity-80 group h-full">
